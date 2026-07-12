@@ -1,0 +1,889 @@
+<!-- note: SOURCE MAP delimiter not found; accepted by shape -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cognition Side-Lab — Hypotheses Portfolio (INTERNAL)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital,wght@0,400;1,400&amp;display=swap" media="print" onload="this.media='all'">
+<style>
+/* ============ single source of truth: ALL colors / spacing / rule-widths ============ */
+:root{
+  --bg:#0d1117;
+  --surface:#161b22;
+  --surface-2:#1c2128;
+  --rule:#30363d;
+  --ink:#e6edf3;
+  --ink-dim:#9da7b3;
+  --ink-faint:#768390;
+  --accent:#58a6ff;
+  --sel:#388bfd;
+  --banner-red:#f85149;
+  --banner-bg:#2d1618;
+  --warn-amber:#d29922;
+  --ok-green:#3fb950;
+  --chip-bg:#21262d;
+  --posture-go:#3fb950;        /* semantic-intent slot: go / positive */
+  --posture-caution:#d29922;   /* semantic-intent slot: caution / time-boxed / queued */
+  --posture-deferred:#768390;  /* semantic-intent slot: deferred / inactive / parked */
+  --posture-neutral:#484f58;   /* unassigned posture */
+  --risk-red:#f85149;
+  --hatch-a:#30363d;
+  --hatch-b:#1c2128;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+  --rule-w:1px;
+  --rule-w-heavy:4px;
+  --radius:6px;
+  --font-mono:"IBM Plex Mono",Consolas,"Courier New",monospace;
+  --font-sans:"IBM Plex Sans","Segoe UI",Arial,sans-serif;
+  --font-serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;padding-bottom:var(--sp-6)}
+h1,h2,h3,h4{font-family:var(--font-mono);font-weight:600}
+h2{font-size:16px;margin-bottom:var(--sp-3)}
+h3{font-size:13px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:var(--sp-2)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--sp-4)}
+/* ---- top bar ---- */
+#topbar{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-3);padding:var(--sp-4) var(--sp-4);border-bottom:var(--rule-w) solid var(--rule);background:var(--surface)}
+#topbar .title{font-family:var(--font-mono);font-size:18px;font-weight:600}
+#topbar .title .bracket{color:var(--accent)}
+#topbar .tasklabel{color:var(--ink-dim);font-size:12px}
+.pill{display:inline-block;border:var(--rule-w) solid var(--rule);border-radius:999px;padding:2px var(--sp-3);font-family:var(--font-mono);font-size:11px;background:var(--surface-2);color:var(--ink)}
+.pill.vis{border-color:var(--accent);color:var(--accent)}
+.chip{display:inline-block;background:var(--chip-bg);border:var(--rule-w) solid var(--rule);border-radius:var(--radius);padding:1px var(--sp-2);font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);margin:2px 2px 2px 0}
+.chip.evidence{color:var(--ink);border-color:var(--banner-red)}
+.chip.gate{color:var(--risk-red);border-color:var(--risk-red)}
+.chip.forbidden{color:var(--banner-red);border-color:var(--banner-red);font-style:italic}
+.chip.file{color:var(--ink-faint)}
+/* ---- honesty banner ---- */
+#banner{background:var(--banner-bg);border-left:var(--rule-w-heavy) solid var(--banner-red);padding:var(--sp-3) var(--sp-4);margin:var(--sp-4) var(--sp-4) 0}
+#banner .lead{font-family:var(--font-mono);font-size:11px;color:var(--banner-red);letter-spacing:.08em;text-transform:uppercase}
+#banner .verbatim{font-family:var(--font-serif);font-size:14px;margin:var(--sp-2) 0}
+#banner .required{font-family:var(--font-mono);font-size:11px;color:var(--banner-red);margin-top:var(--sp-1)}
+/* ---- tabs ---- */
+#tabbar{display:flex;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4) 0}
+#tabbar button{font-family:var(--font-mono);font-size:12px;background:var(--surface);color:var(--ink-dim);border:var(--rule-w) solid var(--rule);border-bottom:none;border-radius:var(--radius) var(--radius) 0 0;padding:var(--sp-2) var(--sp-4);cursor:pointer}
+#tabbar button.active{color:var(--ink);background:var(--surface-2);border-color:var(--accent)}
+.tab{display:none;padding:var(--sp-4)}
+.tab.active{display:block}
+.panel{background:var(--surface);border:var(--rule-w) solid var(--rule);border-radius:var(--radius);padding:var(--sp-4);margin-bottom:var(--sp-4)}
+.callout{border-left:var(--rule-w-heavy) solid var(--accent);background:var(--surface-2);padding:var(--sp-3) var(--sp-4);font-family:var(--font-serif);font-size:16px;margin-bottom:var(--sp-4)}
+.note{color:var(--ink-faint);font-size:12px;margin-top:var(--sp-2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--sp-3)}
+.ccard{background:var(--surface-2);border:var(--rule-w) solid var(--rule);border-radius:var(--radius);padding:var(--sp-3)}
+.ccard h4{font-size:12px;color:var(--accent);margin-bottom:var(--sp-1)}
+.hardrule{border:var(--rule-w) solid var(--banner-red);border-left:var(--rule-w-heavy) solid var(--banner-red);border-radius:var(--radius);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4);background:var(--surface)}
+.hardrule .never{font-family:var(--font-mono);color:var(--banner-red)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);text-align:left;border-bottom:var(--rule-w) solid var(--rule);padding:var(--sp-2)}
+td{border-bottom:var(--rule-w) solid var(--rule);padding:var(--sp-2);vertical-align:top}
+.mono{font-family:var(--font-mono)}
+.dim{color:var(--ink-dim)}
+.faint{color:var(--ink-faint)}
+.unknown{font-family:var(--font-mono);color:var(--ink-faint);font-style:italic}
+/* ---- option board ---- */
+#buckets{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:var(--sp-3)}
+.bucket{border:var(--rule-w) solid var(--rule);border-top:var(--rule-w-heavy) solid var(--posture-neutral);border-radius:var(--radius);background:var(--surface);padding:var(--sp-3)}
+.bucket h3{margin-bottom:var(--sp-3)}
+.acard{background:var(--surface-2);border:var(--rule-w) solid var(--rule);border-radius:var(--radius);padding:var(--sp-3);margin-bottom:var(--sp-3);cursor:pointer}
+.acard.selected{outline:2px solid var(--sel)}
+.acard .code{font-family:var(--font-mono);font-weight:600;font-size:12px;background:var(--chip-bg);border:var(--rule-w) solid var(--rule);border-radius:var(--radius);padding:0 var(--sp-2);margin-right:var(--sp-2)}
+.acard .nm{font-weight:600;font-size:13px}
+.acard .reality{font-size:12px;color:var(--ink-dim);margin:var(--sp-2) 0}
+.acard .call{font-family:var(--font-serif);font-style:italic;font-size:13px;margin:var(--sp-2) 0}
+.acard.parked{opacity:.75;background:var(--surface);border-style:solid}
+.acard.parked .nm,.acard.parked .call{color:var(--ink-dim)}
+.ptag{display:inline-block;font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;border-radius:var(--radius);padding:1px var(--sp-2);border:var(--rule-w) solid var(--rule)}
+.legend{display:flex;flex-wrap:wrap;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.legend .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:var(--sp-1)}
+/* ---- analysis ---- */
+#analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4)}
+@media(max-width:900px){#analysis-grid{grid-template-columns:1fr}}
+#spine tr{cursor:pointer}
+#spine tr.selected td{background:var(--surface-2);border-left:var(--rule-w-heavy) solid var(--sel)}
+.sortbar{margin-bottom:var(--sp-2)}
+.sortbar button{font-family:var(--font-mono);font-size:11px;background:var(--chip-bg);color:var(--ink-dim);border:var(--rule-w) solid var(--rule);border-radius:var(--radius);padding:2px var(--sp-2);cursor:pointer;margin-right:var(--sp-1)}
+.sortbar button.active{color:var(--accent);border-color:var(--accent)}
+svg text{font-family:var(--font-mono);font-size:10px;fill:var(--ink-dim)}
+svg .axis{stroke:var(--rule);stroke-width:1}
+svg .qlabel{fill:var(--ink-faint);font-size:9px}
+svg .dot{fill:var(--accent);stroke:var(--bg);stroke-width:1;cursor:pointer}
+svg .dot.selected{fill:var(--sel);r:8}
+svg .dotlbl{fill:var(--ink);font-size:10px}
+.strip{border:var(--rule-w) dashed var(--rule);border-radius:var(--radius);padding:var(--sp-2) var(--sp-3);margin-top:var(--sp-2);font-size:12px;color:var(--ink-dim)}
+.caption{font-size:11px;color:var(--ink-faint);margin-top:var(--sp-2);font-style:italic}
+/* ladder */
+.lrow{display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-2);cursor:pointer}
+.lrow .lcode{font-family:var(--font-mono);font-size:11px;width:56px;flex:none}
+.lrow .bar{height:16px;flex:1;border:var(--rule-w) solid var(--rule);border-radius:2px;position:relative;overflow:hidden}
+.lrow .bar.hatched{background:repeating-linear-gradient(45deg,var(--hatch-a) 0,var(--hatch-a) 4px,var(--hatch-b) 4px,var(--hatch-b) 8px)}
+.lrow .bar .btxt{position:absolute;left:var(--sp-2);top:0;font-family:var(--font-mono);font-size:10px;color:var(--ink-dim);line-height:16px;white-space:nowrap}
+.lrow.selected .lcode{color:var(--sel)}
+/* detail */
+#detail .bars .brow{display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-1)}
+#detail .bars .blabel{font-family:var(--font-mono);font-size:10px;width:130px;flex:none;color:var(--ink-dim)}
+#detail .bars .btrack{flex:1;height:10px;border:var(--rule-w) solid var(--rule);border-radius:2px;overflow:hidden}
+#detail .bars .bfill{height:100%;background:var(--accent)}
+#detail .bars .btrack.hatched{background:repeating-linear-gradient(45deg,var(--hatch-a) 0,var(--hatch-a) 4px,var(--hatch-b) 4px,var(--hatch-b) 8px)}
+#detail .bars .bval{font-family:var(--font-mono);font-size:10px;width:170px;flex:none;color:var(--ink-faint)}
+/* execution */
+.gatebar{border:var(--rule-w) solid var(--risk-red);border-left:var(--rule-w-heavy) solid var(--risk-red);border-radius:var(--radius);padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4);background:var(--surface)}
+.gatebar .glead{font-family:var(--font-mono);font-size:11px;color:var(--risk-red);letter-spacing:.06em;text-transform:uppercase}
+svg .edge{stroke:var(--rule);stroke-width:1;fill:none}
+svg .edge.hub{stroke:var(--accent);stroke-width:2}
+svg .pnode{fill:var(--surface-2);stroke:var(--rule)}
+svg .pnode.hub{stroke:var(--accent);stroke-width:2}
+svg .anode{fill:var(--chip-bg);stroke:var(--rule)}
+svg .ntext{fill:var(--ink);font-size:10px}
+.dodlist{list-style:none}
+.dodlist li{padding:var(--sp-1) 0;border-bottom:var(--rule-w) solid var(--rule);font-size:13px}
+.dodlist li::before{content:"☐ ";color:var(--ink-dim)}
+footer.small{padding:var(--sp-3) var(--sp-4);color:var(--ink-faint);font-size:11px}
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+<div id="banner"></div>
+<nav id="tabbar"></nav>
+<main>
+  <section class="tab" id="tab-brief"></section>
+  <section class="tab" id="tab-board"></section>
+  <section class="tab" id="tab-analysis"></section>
+  <section class="tab" id="tab-execution"></section>
+</main>
+<footer class="small" id="foot"></footer>
+<script>
+(function(){
+"use strict";
+/* ============ SINGLE SOURCE OF TRUTH — the parsed SOURCE MAP ============ */
+const MAP = {
+  meta:{
+    title:"Cognition Side-Lab — Hypotheses Portfolio",
+    taskLabel:"Hypotheses portfolio · quarterly triage",
+    visibility:"INTERNAL",
+    date:"2026-06-30",
+    dateSource:"operator-decisions block date (built-via carries the same date, shown as chip)",
+    builtVia:"quarterly lab notebook review (2026-06-30), self-directed",
+    postureVerbatim:"Triage catalog — what each hypothesis is, who'd build on it, what's missing, ranked by evidence maturity. No commitment to publish or pursue. Private; curiosity-first; no submission deadline.",
+    posturePill:"Triage catalog · no commitment to publication or pursuit",
+    emphasis:"the memory-effects cluster is the lab's center; the tooling experiments exist to serve it (ranked second)",
+    bluntNote:"The “evidence-reality” column is deliberately blunt — enthusiasm ≠ evidence. A hypothesis can be beloved and still rest on n=12. Read that column as the reviewer's veto.",
+    bluntLabel:"Evidence-reality (the reviewer's veto)",
+    axes:{ x:"Evidence maturity", y:"Build-on-it pull" },
+    ladderMetric:"Headline magnitude — no quantitative ceiling column exists in this map"
+  },
+  honesty:{
+    verbatim:"positioned as exploratory hypotheses — never validated findings, never recommendations, never a causal claim. There is no external validation (0 replications; pre-registration pending on all active lines; nothing peer-reviewed). Outward-facing material (preprints, talk proposals, blog explainers) stays PARKED in the outreach lane.",
+    positionedAs:"exploratory hypotheses",
+    neverClause:["never validated findings","never recommendations","never a causal claim"],
+    evidenceChips:["0 replications","pre-registration pending on all active lines","nothing peer-reviewed"],
+    /* forbidden-claims token set, parsed from the NEVER-clause of THIS map */
+    forbiddenScan:[/finding/i,/recommendation/i,/causal/i],
+    forbiddenChipText:"exploratory work — not a validated finding"
+  },
+  sections:[
+    {id:"A", label:"Cluster A — Memory effects (center)"},
+    {id:"B", label:"Cluster B — Tooling experiments (support)"}
+  ],
+  assets:[
+    {code:"MEM-3", name:"Retrieval-practice logging harness", section:"A", rank:1,
+     files:["harness/quiz_runner.py","harness/README.md","6 months of run logs"],
+     maturityProse:"High (runs daily; logs are consistent)",
+     consumer:"every study in Cluster A depends on it",
+     reality:"Solid infrastructure, not a finding. It measures reliably; it concludes nothing. Its value is that other work can trust the data layer.",
+     realityCue:"Solid infrastructure, not a finding",
+     missing:["export format documentation","a data dictionary"],
+     maturity:"High", pull:"High (everything depends on it)",
+     honestCall:"Keep running; document the data layer",
+     posture:"UNKNOWN", postureAnchor:"no explicit disposition word in its honest call and no operator decision names it",
+     status:"catalog-only", statusSource:"named by no operator decision",
+     gate:null, dontYet:null, outsideFacing:false, parkedComputed:false},
+    {code:"TOOL-2", name:"Blinded self-scoring protocol", section:"B", rank:2,
+     files:["protocols/blind_scoring.md","tools/blind_score.py"],
+     maturityProse:"Medium (used in the H1 pilot)",
+     consumer:"any self-experiment where the experimenter is also the rater",
+     reality:"The most defensible thing in the lab. Self-rating bias is the obvious attack on everything here; this protocol is the only structural answer on hand.",
+     realityCue:"The most defensible thing in the lab",
+     missing:["an audit of unblinding leaks","a worked example write-up"],
+     maturity:"Medium", pull:"High (defends the whole lab)",
+     honestCall:"Audit for leaks, then write the worked example",
+     posture:"AUTHORIZED", postureAnchor:"operator decision R2 names TOOL-2 by code (unblinding-leak audit authorized as an undated background task)",
+     status:"AUTHORIZED-prep", statusSource:"R2",
+     gate:null,
+     dontYet:"outward-facing use of the worked example — R4 standing rule applies to any outward-facing draft",
+     outsideFacing:false, parkedComputed:false},
+    {code:"MEM-1", name:"Spacing-interval saturation curve", section:"A", rank:3,
+     files:["notebooks/spacing_curve.ipynb","data/sessions_2026H1.csv (n=214 self-trials)","prereg/DRAFT_spacing.md"],
+     maturityProse:"Medium (pilot data collected; pre-registration drafted, unfiled)",
+     consumer:"future-me designing the confirmatory study; possibly a collaborator",
+     reality:"Suggestive, self-sampled, underpowered. The curve shape is pretty; n=214 from one subject proves nothing. Worth a real pre-registered run, worthless to share before that.",
+     realityCue:"Suggestive, self-sampled, underpowered",
+     missing:["file the pre-registration","a second subject","power analysis"],
+     maturity:"Medium", pull:"Medium",
+     honestCall:"File the prereg before touching more data",
+     posture:"QUEUED", postureAnchor:"operator decision R3 names MEM-1 by code (pre-registration filing QUEUED, undated)",
+     status:"QUEUED", statusSource:"R3",
+     gate:"R3: filing blocked on the power analysis",
+     dontYet:"“File the prereg before touching more data” [quoted honest call]",
+     outsideFacing:false, parkedComputed:false},
+    {code:"TOOL-1", name:"Notebook-to-prereg template pipeline", section:"B", rank:4,
+     files:["tools/prereg_from_notebook.py","templates/prereg.md"],
+     maturityProse:"Medium (works on 2 of 3 notebook styles)",
+     consumer:"me at pre-registration time; conceivably other self-experimenters",
+     reality:"Useful to one person so far. The third notebook style breaks it; nobody else has run it.",
+     realityCue:"Useful to one person so far",
+     missing:["fix style-3 parsing","one outside user"],
+     maturity:"Medium", pull:"Low",
+     honestCall:"Fix style-3 only if MEM-1 files",
+     posture:"UNKNOWN", postureAnchor:"no explicit disposition word in its honest call and no operator decision names it",
+     status:"catalog-only", statusSource:"named by no operator decision",
+     gate:null,
+     dontYet:"“Fix style-3 only if MEM-1 files” [quoted honest call]",
+     outsideFacing:false, parkedComputed:false},
+    {code:"MEM-2", name:"Interference from same-day topic switching", section:"A", rank:5,
+     files:["notebooks/interference.ipynb","codebook.md (tagging schema)"],
+     maturityProse:"Low (exploratory scatter only)",
+     consumer:"the lab's own study queue",
+     reality:"A hunch with a plot. Confounded with time-of-day; the codebook tags were applied retroactively. Kill or redesign.",
+     realityCue:"A hunch with a plot",
+     missing:["prospective tagging","a confound plan"],
+     maturity:"Low", pull:"Low",
+     honestCall:"Redesign or kill at next triage",
+     posture:"UNKNOWN", postureAnchor:"“redesign or kill at next triage” is a conditional future action, not an assigned disposition; no operator decision names it",
+     status:"catalog-only", statusSource:"named by no operator decision",
+     gate:null,
+     dontYet:"“Redesign or kill at next triage” [quoted honest call]",
+     outsideFacing:false, parkedComputed:false},
+    {code:"TOOL-3", name:"Talk-proposal draft (“Self-experiments that survive review”)", section:"B", rank:6,
+     files:["drafts/talk_proposal.md (900 words)"],
+     maturityProse:"Low (draft; claims outrun the data)",
+     consumer:"a methods-community audience, eventually",
+     reality:"Premature by its own abstract. It promises conclusions the portfolio explicitly does not have.",
+     realityCue:"Premature by its own abstract",
+     missing:["everything upstream (a filed prereg, one replication)","honest reframing"],
+     maturity:"Low", pull:"n/a",
+     honestCall:"Parked by its own honesty problem",
+     posture:"PARKED", postureAnchor:"“Parked” appears in its own honest call; boundary check parks the outreach lane; R4 names TOOL-3",
+     status:"PARKED", statusSource:"computed PARKED set (boundary check + R4) + own honest call",
+     gate:"R4 (STANDING RULE): no outward-facing draft advances before at least one pre-registered result exists",
+     dontYet:"do not advance — outreach lane is parked; R4-gated",
+     outsideFacing:true, parkedComputed:true}
+  ],
+  synthesis:{
+    bottomLine:"Nothing here is a finding; two things are load-bearing infrastructure (MEM-3's harness, TOOL-2's blinding protocol).",
+    bullets:[
+      {title:"Infrastructure, not findings",
+       text:"Nothing here is a finding; two things are load-bearing infrastructure (MEM-3's harness, TOOL-2's blinding protocol)."},
+      {title:"The only externally interesting artifact is TOOL-2",
+       text:"… and only as a worked method write-up — not as a claim about memory."},
+      {title:"The portfolio's real risk is narrative drift",
+       text:"The talk draft (TOOL-3) shows the pull to present exploration as results; the honesty constraint exists because of it."},
+      {title:"Recommended posture",
+       text:"Infrastructure first; the one low-regret prep is the TOOL-2 unblinding-leak audit, since every future study inherits its credibility."}
+    ],
+    dedupNote:"the ranked-table bottom line and the boundary-check headline de-duplicate into these four — the count is the rendered count"
+  },
+  boundary:{
+    headline:"Internal triage only. No outreach material produced (preprints, talk proposals, explainers remain PARKED). Every hypothesis cites a real file. No validated-finding or causal claim anywhere. Nothing submitted.",
+    parkedCollateral:["preprints","talk proposals","blog explainers"]
+  },
+  decisions:[
+    {id:"R1", kind:"stand", text:"evidence-reality calls stand as written.", targets:[]},
+    {id:"R2", kind:"authorize-prep", move:"TOOL-2 unblinding-leak audit",
+     text:"the ONLY carve-out from pure triage: the TOOL-2 unblinding-leak audit — AUTHORIZED as an undated background task. Everything else stays catalog-only.",
+     targets:["TOOL-2"]},
+    {id:"R3", kind:"queue", move:"MEM-1 pre-registration filing",
+     text:"MEM-1 pre-registration filing: QUEUED, undated — blocked on the power analysis.",
+     targets:["MEM-1"], gate:"blocked on the power analysis"},
+    {id:"R4", kind:"standing-rule",
+     text:"no outward-facing draft (TOOL-3 included) advances before at least one pre-registered result exists.",
+     targets:["TOOL-3"], appliesTo:"every outward-facing-draft action"}
+  ],
+  selfDisciplineLine:null /* the map supplies none; per the spec, none is rendered */
+};
+
+/* ============ closed label→coordinate whitelist (leading-token match) ============ */
+const COORD_WHITELIST = [
+  [/^(moderate-high|medium-high)\b/, 0.675],
+  [/^(low-medium|medium-low)\b/, 0.35],
+  [/^(highest|high)\b/, 0.85],
+  [/^(medium|moderate)\b/, 0.5],
+  [/^low\b/, 0.2]
+];
+function mapLabel(v){
+  if(v===null||v===undefined||v==="") return {kind:"unknown"};
+  const s = String(v).trim().toLowerCase();
+  if(/^(none|n\/a)\b/.test(s)) return {kind:"na", literal:String(v)};
+  for(let i=0;i<COORD_WHITELIST.length;i++){
+    if(COORD_WHITELIST[i][0].test(s)) return {kind:"point", x:COORD_WHITELIST[i][1], literal:String(v)};
+  }
+  return {kind:"unmapped", literal:String(v)};
+}
+function forbiddenHit(a){
+  const rec = [a.name,a.consumer,a.reality,a.honestCall].concat(a.missing).join(" | ");
+  for(let i=0;i<MAP.honesty.forbiddenScan.length;i++){
+    if(MAP.honesty.forbiddenScan[i].test(rec)) return true;
+  }
+  return false;
+}
+/* posture word → semantic-intent color slot (heuristic keyed on the map's own words) */
+function postureSlot(p){
+  const s=(p||"").toLowerCase();
+  if(/authoriz|go\b|active/.test(s)) return "go";
+  if(/queue|pending|wait/.test(s)) return "caution";
+  if(/park|shelv|defer|inactiv|kill/.test(s)) return "deferred";
+  return "neutral";
+}
+function slotColorVar(slot){
+  return {go:"var(--posture-go)",caution:"var(--posture-caution)",deferred:"var(--posture-deferred)",neutral:"var(--posture-neutral)"}[slot];
+}
+function el(tag, attrs, kids){
+  const n=document.createElement(tag);
+  if(attrs) for(const k in attrs){
+    if(k==="text") n.textContent=attrs[k];
+    else if(k==="cls") n.className=attrs[k];
+    else if(k==="style") n.setAttribute("style",attrs[k]);
+    else n.setAttribute(k,attrs[k]);
+  }
+  if(kids) kids.forEach(function(c){ if(c) n.appendChild(typeof c==="string"?document.createTextNode(c):c); });
+  return n;
+}
+function svgEl(tag, attrs){
+  const n=document.createElementNS("http://www.w3.org/2000/svg",tag);
+  if(attrs) for(const k in attrs){
+    if(k==="text") n.textContent=attrs[k];
+    else if(k==="cls") n.setAttribute("class",attrs[k]);
+    else n.setAttribute(k,attrs[k]);
+  }
+  return n;
+}
+let SELECTED = null; /* selected asset code for cross-highlight */
+/* ============ persistent chrome ============ */
+function renderTopbar(){
+  const tb=document.getElementById("topbar");
+  const parts=MAP.meta.title.split(" ");
+  const title=el("div",{cls:"title"});
+  title.appendChild(el("span",{cls:"bracket",text:"["+parts[0]+"]"}));
+  title.appendChild(document.createTextNode(" "+parts.slice(1).join(" ")));
+  tb.appendChild(title);
+  tb.appendChild(el("span",{cls:"tasklabel",text:MAP.meta.taskLabel}));
+  tb.appendChild(el("span",{cls:"pill",text:MAP.meta.posturePill}));
+  tb.appendChild(el("span",{cls:"pill vis",text:MAP.meta.visibility+" · "+MAP.meta.date}));
+  tb.appendChild(el("span",{cls:"chip",title:"provenance",text:"built via: "+MAP.meta.builtVia}));
+}
+function renderBanner(){
+  const b=document.getElementById("banner");
+  b.appendChild(el("div",{cls:"lead",text:"Honesty boundary — binding on every entry · not removable"}));
+  b.appendChild(el("div",{cls:"verbatim",text:"“"+MAP.honesty.verbatim+"”"}));
+  b.appendChild(el("div",{cls:"required",text:"REQUIRED BOUNDARY: "+MAP.honesty.neverClause.join(" · ")}));
+  const chips=el("div",{});
+  MAP.honesty.evidenceChips.forEach(function(c){ chips.appendChild(el("span",{cls:"chip evidence",text:c})); });
+  b.appendChild(chips);
+}
+function renderTabs(){
+  const bar=document.getElementById("tabbar");
+  const tabs=[["brief","Brief"],["board","Option Board"],["analysis","Analysis"],["execution","Execution"]];
+  tabs.forEach(function(t,i){
+    const btn=el("button",{text:t[1],"data-tab":t[0]});
+    btn.addEventListener("click",function(){
+      Array.prototype.forEach.call(bar.children,function(x){x.classList.remove("active");});
+      btn.classList.add("active");
+      Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(x){x.classList.remove("active");});
+      document.getElementById("tab-"+t[0]).classList.add("active");
+    });
+    if(i===0) btn.classList.add("active");
+    bar.appendChild(btn);
+  });
+  document.getElementById("tab-brief").classList.add("active");
+}
+/* ============ Tab 1 — BRIEF ============ */
+function renderBrief(){
+  const root=document.getElementById("tab-brief");
+  root.appendChild(el("div",{cls:"callout",text:MAP.synthesis.bottomLine}));
+  root.appendChild(el("p",{cls:"note",text:"Posture [quoted]: “"+MAP.meta.postureVerbatim+"” · Emphasis: "+MAP.meta.emphasis}));
+
+  const conc=el("div",{cls:"panel"});
+  conc.appendChild(el("h2",{text:"The four conclusions"}));
+  const grid=el("div",{cls:"grid"});
+  MAP.synthesis.bullets.forEach(function(bl){
+    grid.appendChild(el("div",{cls:"ccard"},[el("h4",{text:bl.title}),el("div",{text:bl.text})]));
+  });
+  conc.appendChild(grid);
+  conc.appendChild(el("p",{cls:"note",text:"Sourced from the honest-synthesis bullets; "+MAP.synthesis.dedupNote+"."}));
+  root.appendChild(conc);
+
+  const hr=el("div",{cls:"hardrule"});
+  hr.appendChild(el("h3",{text:"Hard rule"}));
+  hr.appendChild(el("div",{},[
+    "Positioned as "+MAP.honesty.positionedAs+" — ",
+    el("span",{cls:"never",text:MAP.honesty.neverClause.join(" · ")}),
+    ". Boundary check [quoted]: “"+MAP.boundary.headline+"”"
+  ]));
+  root.appendChild(hr);
+
+  /* Authorized-action panel — internal prep ONLY, never an external call-to-action */
+  const auth=el("div",{cls:"panel"});
+  auth.appendChild(el("h2",{text:"Authorized action — internal prep only (not an external call-to-action)"}));
+  const authDecisions=MAP.decisions.filter(function(d){return d.kind==="authorize-prep";});
+  if(authDecisions.length===0){
+    auth.appendChild(el("div",{text:"No action authorized — catalog only."}));
+  }
+  authDecisions.forEach(function(d){
+    auth.appendChild(el("div",{cls:"mono",text:d.id+" — "+d.move+" · AUTHORIZED as an undated background task"}));
+    auth.appendChild(el("p",{cls:"note",text:"[quoted] “"+d.text+"”"}));
+    const dod=el("div",{});
+    dod.appendChild(el("h3",{text:"Definition of done (from the named asset's missing-prep list)"}));
+    const ul=el("ul",{cls:"dodlist"});
+    const rows=[];
+    d.targets.forEach(function(code){
+      const a=MAP.assets.filter(function(x){return x.code===code;})[0];
+      a.missing.forEach(function(m){
+        ul.appendChild(el("li",{text:m+" — ["+a.code+"]"}));
+        rows.push({task:m,src:a.code});
+      });
+    });
+    dod.appendChild(ul);
+    auth.appendChild(dod);
+    const tbl=el("table",{});
+    tbl.appendChild(el("thead",{},[el("tr",{},[el("th",{text:"Task"}),el("th",{text:"Source asset"}),el("th",{text:"Size"})])]));
+    const tb=el("tbody",{});
+    rows.forEach(function(r){
+      tb.appendChild(el("tr",{},[el("td",{text:r.task}),el("td",{cls:"mono",text:r.src}),el("td",{},[el("span",{cls:"unknown",text:"UNKNOWN"})])]));
+    });
+    tbl.appendChild(tb);
+    auth.appendChild(el("h3",{text:"Task-size table"}));
+    auth.appendChild(tbl);
+    auth.appendChild(el("p",{cls:"note",text:"The map states no size estimates — sizes render UNKNOWN, never invented. Authorization upgrades nothing elsewhere on the board."}));
+  });
+  root.appendChild(auth);
+
+  /* Do-not-do-yet panel */
+  const dny=el("div",{cls:"panel"});
+  dny.appendChild(el("h2",{text:"Do not do yet"}));
+  const ul2=el("ul",{cls:"dodlist"});
+  MAP.boundary.parkedCollateral.forEach(function(c){
+    ul2.appendChild(el("li",{text:c+" — outward-facing collateral, PARKED in the outreach lane (boundary check; panel reference only, not an asset card)"}));
+  });
+  const r4=MAP.decisions.filter(function(d){return d.kind==="standing-rule";})[0];
+  if(r4) ul2.appendChild(el("li",{text:r4.id+" (STANDING RULE): "+r4.text}));
+  ul2.appendChild(el("li",{text:"TOOL-3 advancement — parked by its own honesty problem; outside-facing; R4-gated"}));
+  ul2.appendChild(el("li",{text:"MEM-1 pre-registration filing — QUEUED (R3) but blocked on the power analysis; not to be filed before it"}));
+  dny.appendChild(ul2);
+  if(MAP.selfDisciplineLine===null){
+    dny.appendChild(el("p",{cls:"note",text:"The map supplies no self-discipline line, so none is rendered — this panel is built from the map's deferred/parked items only."}));
+  }
+  root.appendChild(dny);
+}
+/* ============ Tab 2 — OPTION BOARD ============ */
+function assetCard(a){
+  const card=el("div",{cls:"acard"+(a.parkedComputed?" parked":""),id:"card-"+a.code});
+  const head=el("div",{});
+  head.appendChild(el("span",{cls:"code",text:a.code}));
+  head.appendChild(el("span",{cls:"nm",text:a.name}));
+  card.appendChild(head);
+  const tags=el("div",{});
+  const slot=postureSlot(a.posture==="UNKNOWN"?"":a.posture);
+  const pt=el("span",{cls:"ptag",text:a.posture==="UNKNOWN"?"unassigned posture":a.posture});
+  pt.style.borderColor=slotColorVar(a.posture==="UNKNOWN"?"neutral":slot);
+  pt.style.color=slotColorVar(a.posture==="UNKNOWN"?"neutral":slot);
+  tags.appendChild(pt);
+  if(a.parkedComputed){
+    tags.appendChild(el("span",{cls:"ptag",text:"PARKED — outreach lane · zero call-to-action"}));
+    tags.appendChild(el("span",{cls:"chip gate",text:"outside-facing — parked by default"}));
+  }
+  if(a.gate && a.gate.indexOf("R4")===0) tags.appendChild(el("span",{cls:"chip gate",text:"GATED — R4"}));
+  if(a.code==="TOOL-2") tags.appendChild(el("span",{cls:"chip",text:"authorization = internal prep (see Brief), not outside use"}));
+  card.appendChild(tags);
+  card.appendChild(el("div",{cls:"reality"},[el("strong",{text:MAP.meta.bluntLabel+": "}),a.reality]));
+  const chips=el("div",{});
+  chips.appendChild(el("span",{cls:"chip",text:"MATURITY: "+a.maturity}));
+  chips.appendChild(el("span",{cls:"chip",text:"PULL: "+a.pull}));
+  chips.appendChild(el("span",{cls:"chip"},[el("span",{text:"RISK: "}),el("span",{cls:"unknown",text:"UNKNOWN"})]));
+  if(forbiddenHit(a)) chips.appendChild(el("span",{cls:"chip forbidden",text:MAP.honesty.forbiddenChipText}));
+  card.appendChild(chips);
+  card.appendChild(el("div",{cls:"call",text:"“"+a.honestCall+"”"}));
+  const files=el("div",{});
+  a.files.forEach(function(f){ files.appendChild(el("span",{cls:"chip file",text:f})); });
+  card.appendChild(files);
+  card.addEventListener("click",function(){ selectAsset(a.code); });
+  return card;
+}
+function renderBoard(){
+  const root=document.getElementById("tab-board");
+  /* posture taxonomy = the distinct posture values actually present in THIS map */
+  const present=[];
+  MAP.assets.forEach(function(a){ const p=a.posture; if(present.indexOf(p)<0) present.push(p); });
+  const order=present.filter(function(p){return p!=="UNKNOWN";}).concat(present.indexOf("UNKNOWN")>=0?["UNKNOWN"]:[]);
+  const legend=el("div",{cls:"legend"});
+  order.forEach(function(p){
+    const slot=p==="UNKNOWN"?"neutral":postureSlot(p);
+    const it=el("span",{cls:"mono",style:"font-size:11px"});
+    const sw=el("span",{cls:"sw"}); sw.style.background=slotColorVar(slot);
+    it.appendChild(sw); it.appendChild(document.createTextNode(p==="UNKNOWN"?"unassigned posture":p));
+    legend.appendChild(it);
+  });
+  root.appendChild(legend);
+  root.appendChild(el("p",{cls:"note",text:"Buckets derive only from explicit anchors: a disposition word in the asset's own honest call, or an operator decision naming it by code. Synthesis tone never colors a card. The computed PARKED set (boundary check + standing rule + outside-facing test) force-renders its members gray with zero call-to-action, overriding any posture."}));
+  const buckets=el("div",{id:"buckets"});
+  order.forEach(function(p){
+    const bk=el("div",{cls:"bucket"});
+    const slot=p==="UNKNOWN"?"neutral":postureSlot(p);
+    bk.style.borderTopColor=slotColorVar(slot);
+    bk.appendChild(el("h3",{text:p==="UNKNOWN"?"unassigned posture":p}));
+    MAP.assets.filter(function(a){return a.posture===p;}).forEach(function(a){
+      bk.appendChild(assetCard(a));
+      const anchor=el("p",{cls:"note",text:"anchor: "+a.postureAnchor});
+      bk.appendChild(anchor);
+    });
+    buckets.appendChild(bk);
+  });
+  root.appendChild(buckets);
+}
+/* ============ Tab 3 — ANALYSIS ============ */
+let SORT_KEY="rank";
+function sortedAssets(){
+  const arr=MAP.assets.slice();
+  if(SORT_KEY==="rank"){
+    arr.sort(function(a,b){
+      const ra=(a.rank===null||a.rank===undefined)?Infinity:a.rank;
+      const rb=(b.rank===null||b.rank===undefined)?Infinity:b.rank;
+      return ra-rb;
+    });
+  }else if(SORT_KEY==="maturity"||SORT_KEY==="pull"){
+    arr.sort(function(a,b){
+      const ma=mapLabel(a[SORT_KEY]), mb=mapLabel(b[SORT_KEY]);
+      const va=ma.kind==="point"?ma.x:-1, vb=mb.kind==="point"?mb.x:-1;
+      return vb-va;
+    });
+  } /* magnitude: no quantitative ceiling exists in this map — order unchanged (rank) */
+  return arr;
+}
+function renderSpine(){
+  const host=document.getElementById("spine-host");
+  host.innerHTML="";
+  const tbl=el("table",{id:"spine"});
+  tbl.appendChild(el("thead",{},[el("tr",{},[
+    el("th",{text:"Rank"}),el("th",{text:"Code"}),el("th",{text:"Name"}),
+    el("th",{text:MAP.meta.axes.x}),el("th",{text:MAP.meta.axes.y}),
+    el("th",{text:"Ceiling"}),el("th",{text:"Posture / status"})
+  ])]));
+  const tb=el("tbody",{});
+  sortedAssets().forEach(function(a){
+    const tr=el("tr",{id:"spine-"+a.code},[
+      el("td",{cls:"mono",text:String(a.rank)}),
+      el("td",{cls:"mono",text:a.code}),
+      el("td",{text:a.name}),
+      el("td",{text:a.maturity}),
+      el("td",{text:a.pull}),
+      el("td",{},[el("span",{cls:"unknown",text:"UNKNOWN"})]),
+      el("td",{cls:"mono dim",text:(a.posture==="UNKNOWN"?"unassigned":a.posture)+" · "+a.status})
+    ]);
+    if(SELECTED===a.code) tr.classList.add("selected");
+    tr.addEventListener("click",function(){ selectAsset(a.code); });
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  host.appendChild(tbl);
+}
+function renderMatrix(){
+  const host=document.getElementById("matrix-host");
+  host.innerHTML="";
+  const W=520,H=400,ML=56,MB=44,MT=18,MR=16;
+  const pw=W-ML-MR, ph=H-MT-MB;
+  const svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"});
+  svg.appendChild(svgEl("line",{cls:"axis",x1:ML,y1:MT,x2:ML,y2:MT+ph}));
+  svg.appendChild(svgEl("line",{cls:"axis",x1:ML,y1:MT+ph,x2:ML+pw,y2:MT+ph}));
+  /* quantization gridlines at the whitelist anchors */
+  [[0.2,"Low"],[0.5,"Medium"],[0.85,"High"]].forEach(function(t){
+    const gx=ML+t[0]*pw, gy=MT+(1-t[0])*ph;
+    svg.appendChild(svgEl("line",{cls:"axis",x1:gx,y1:MT+ph,x2:gx,y2:MT+ph+4}));
+    const tx=svgEl("text",{x:gx,y:MT+ph+14,"text-anchor":"middle"}); tx.textContent=t[1]; svg.appendChild(tx);
+    svg.appendChild(svgEl("line",{cls:"axis",x1:ML-4,y1:gy,x2:ML,y2:gy}));
+    const ty=svgEl("text",{x:ML-6,y:gy+3,"text-anchor":"end"}); ty.textContent=t[1]; svg.appendChild(ty);
+  });
+  const xl=svgEl("text",{x:ML+pw/2,y:H-6,"text-anchor":"middle"}); xl.textContent=MAP.meta.axes.x+" →"; svg.appendChild(xl);
+  const yl=svgEl("text",{x:12,y:MT+ph/2,"text-anchor":"middle",transform:"rotate(-90 12 "+(MT+ph/2)+")"}); yl.textContent=MAP.meta.axes.y+" →"; svg.appendChild(yl);
+  /* neutral quadrant labels — the map defines no quadrant semantics */
+  const sx=MAP.meta.axes.x.split(" ").pop().toLowerCase(), sy=MAP.meta.axes.y.split(" ").pop().toLowerCase();
+  [[0.75,0.95,"high "+sx+" · high "+sy],[0.25,0.95,"low "+sx+" · high "+sy],
+   [0.25,0.05,"low "+sx+" · low "+sy],[0.75,0.05,"high "+sx+" · low "+sy]].forEach(function(q){
+    const t=svgEl("text",{cls:"qlabel",x:ML+q[0]*pw,y:MT+(1-q[1])*ph,"text-anchor":"middle"});
+    t.textContent=q[2]; svg.appendChild(t);
+  });
+  /* classify every asset */
+  const plotted=[],naStrip=[],unmapped=[],oneAxis=[];
+  MAP.assets.forEach(function(a){
+    const mx=mapLabel(a.maturity), my=mapLabel(a.pull);
+    if(mx.kind==="point"&&my.kind==="point") plotted.push({a:a,x:mx.x,y:my.x});
+    else if(mx.kind==="unmapped"||my.kind==="unmapped") unmapped.push({a:a,mx:mx,my:my});
+    else if(mx.kind==="na"||my.kind==="na") naStrip.push({a:a,mx:mx,my:my});
+    else oneAxis.push({a:a,mx:mx,my:my});
+  });
+  /* de-collision: deterministic visual-only offset for shared coordinates */
+  const groups={};
+  plotted.forEach(function(p){ const k=p.x+","+p.y; (groups[k]=groups[k]||[]).push(p); });
+  Object.keys(groups).forEach(function(k){
+    groups[k].forEach(function(p,i){
+      const n=groups[k].length;
+      p.jx=n>1?(i-(n-1)/2)*10:0; p.jy=0; p.cluster=n;
+    });
+  });
+  plotted.forEach(function(p){
+    const cx=ML+p.x*pw+p.jx, cy=MT+(1-p.y)*ph+p.jy;
+    const dot=svgEl("circle",{cls:"dot"+(SELECTED===p.a.code?" selected":""),cx:cx,cy:cy,r:SELECTED===p.a.code?8:6,id:"dot-"+p.a.code});
+    const tip=svgEl("title",{});
+    tip.textContent=p.a.code+" — "+p.a.name+" · "+MAP.meta.axes.x+": "+p.a.maturity+" → "+p.x+" · "+MAP.meta.axes.y+": "+p.a.pull+" → "+p.y+(p.cluster>1?" · ×"+p.cluster+" at this coordinate (offset is visual-only)":"");
+    dot.appendChild(tip);
+    dot.addEventListener("click",function(){ selectAsset(p.a.code); });
+    svg.appendChild(dot);
+    const lbl=svgEl("text",{cls:"dotlbl",x:cx+9,y:cy+3}); lbl.textContent=p.a.code; svg.appendChild(lbl);
+  });
+  host.appendChild(svg);
+  if(naStrip.length){
+    const s=el("div",{cls:"strip"});
+    s.appendChild(el("strong",{text:"n/a strip — not plottable as a point: "}));
+    naStrip.forEach(function(p){
+      s.appendChild(el("span",{cls:"mono",text:p.a.code+" ("+MAP.meta.axes.y+" = "+p.a.pull+"; "+MAP.meta.axes.x+" = "+p.a.maturity+") "}));
+    });
+    host.appendChild(s);
+  }
+  if(unmapped.length){
+    const s=el("div",{cls:"strip"});
+    s.appendChild(el("strong",{text:"unmapped label — insufficient data for matrix: "}));
+    unmapped.forEach(function(p){ s.appendChild(el("span",{cls:"mono",text:p.a.code+" (“"+(p.mx.kind==="unmapped"?p.mx.literal:p.my.literal)+"”) "})); });
+    host.appendChild(s);
+  }
+  if(oneAxis.length){
+    const s=el("div",{cls:"strip"});
+    s.appendChild(el("strong",{text:"insufficient data for matrix (one axis missing): "}));
+    oneAxis.forEach(function(p){ s.appendChild(el("span",{cls:"mono",text:p.a.code+" "})); });
+    host.appendChild(s);
+  }
+  host.appendChild(el("p",{cls:"caption",text:"points are quantized to label buckets and jittered for legibility — jitter is not precision."}));
+}
+function renderLadder(){
+  const host=document.getElementById("ladder-host");
+  host.innerHTML="";
+  host.appendChild(el("h3",{text:"ceiling not quantified (excluded from numeric sort)"}));
+  sortedAssets().forEach(function(a){
+    const row=el("div",{cls:"lrow"+(SELECTED===a.code?" selected":""),id:"ladder-"+a.code});
+    row.appendChild(el("span",{cls:"lcode",text:a.code}));
+    const bar=el("div",{cls:"bar hatched"});
+    bar.appendChild(el("span",{cls:"btxt",text:"UNKNOWN · cue [quoted]: “"+a.realityCue+"”"}));
+    row.appendChild(bar);
+    row.addEventListener("click",function(){ selectAsset(a.code); });
+    host.appendChild(row);
+  });
+  host.appendChild(el("p",{cls:"note",text:"No quantitative ceiling exists anywhere in this map — the numeric ladder section is empty and no bar widths are invented; hatched bars mean “not quantified”, not zero."}));
+}
+function bar(label,lab){
+  const m=mapLabel(lab);
+  const row=el("div",{cls:"brow"});
+  row.appendChild(el("span",{cls:"blabel",text:label}));
+  const track=el("div",{cls:"btrack"+(m.kind==="point"?"":" hatched")});
+  if(m.kind==="point"){ const f=el("div",{cls:"bfill"}); f.style.width=(m.x*100)+"%"; track.appendChild(f); }
+  row.appendChild(track);
+  row.appendChild(el("span",{cls:"bval",text:m.kind==="point"?lab+" → "+m.x:(m.kind==="na"?lab+" (n/a — no bar)":String(lab)+" — not mappable")}));
+  return row;
+}
+function renderDetail(){
+  const host=document.getElementById("detail");
+  host.innerHTML="";
+  host.appendChild(el("h2",{text:"Detail"}));
+  const a=MAP.assets.filter(function(x){return x.code===SELECTED;})[0];
+  if(!a){ host.appendChild(el("p",{cls:"note",text:"Select an asset in the spine, matrix, or ladder."})); return; }
+  host.appendChild(el("div",{},[el("span",{cls:"code mono",text:a.code}),el("strong",{text:" "+a.name}),el("span",{cls:"dim",text:"  · rank "+a.rank+" · "+ (a.posture==="UNKNOWN"?"unassigned posture":a.posture)})]));
+  const bars=el("div",{cls:"bars",style:"margin:var(--sp-3) 0"});
+  bars.appendChild(bar(MAP.meta.axes.x,a.maturity));
+  bars.appendChild(bar(MAP.meta.axes.y,a.pull));
+  const cr=el("div",{cls:"brow"});
+  cr.appendChild(el("span",{cls:"blabel",text:"Ceiling"}));
+  cr.appendChild(el("div",{cls:"btrack hatched"}));
+  cr.appendChild(el("span",{cls:"bval",text:"UNKNOWN — not quantified in map"}));
+  bars.appendChild(cr);
+  const rr=el("div",{cls:"brow"});
+  rr.appendChild(el("span",{cls:"blabel",text:"Risk tone"}));
+  rr.appendChild(el("div",{cls:"btrack hatched"}));
+  rr.appendChild(el("span",{cls:"bval",text:"UNKNOWN — no risk column in map"}));
+  bars.appendChild(rr);
+  host.appendChild(bars);
+  host.appendChild(el("p",{},[el("strong",{text:"Maturity [quoted]: "}),a.maturityProse]));
+  host.appendChild(el("p",{},[el("strong",{text:"Consumer: "}),a.consumer]));
+  host.appendChild(el("p",{},[el("strong",{text:MAP.meta.bluntLabel+": "}),a.reality]));
+  host.appendChild(el("p",{},[el("strong",{text:"Missing prep: "}),a.missing.join(" · ")]));
+  const files=el("p",{},[el("strong",{text:"Real files cited: "})]);
+  a.files.forEach(function(f){ files.appendChild(el("span",{cls:"chip file",text:f})); });
+  host.appendChild(files);
+  host.appendChild(el("p",{cls:"call",text:"“"+a.honestCall+"”"}));
+  host.appendChild(el("p",{cls:"note",text:"Posture anchor: "+a.postureAnchor}));
+}
+function renderAnalysis(){
+  const root=document.getElementById("tab-analysis");
+  const sb=el("div",{cls:"sortbar"},[el("span",{cls:"dim mono",text:"sort spine: ",style:"font-size:11px"})]);
+  [["rank","rank (default)"],["maturity",MAP.meta.axes.x],["pull",MAP.meta.axes.y],["magnitude","magnitude (none quantified)"]].forEach(function(k){
+    const b=el("button",{text:k[1]});
+    if(k[0]===SORT_KEY) b.classList.add("active");
+    b.addEventListener("click",function(){
+      SORT_KEY=k[0];
+      Array.prototype.forEach.call(sb.querySelectorAll("button"),function(x){x.classList.remove("active");});
+      b.classList.add("active");
+      renderSpine(); renderLadder();
+    });
+    sb.appendChild(b);
+  });
+  const spinePanel=el("div",{cls:"panel"},[el("h2",{text:"Spine — ranked table is the ordering authority"})]);
+  spinePanel.appendChild(sb);
+  spinePanel.appendChild(el("div",{id:"spine-host"}));
+  root.appendChild(spinePanel);
+  const grid=el("div",{id:"analysis-grid"});
+  const mp=el("div",{cls:"panel"},[el("h2",{text:"Matrix — "+MAP.meta.axes.x+" × "+MAP.meta.axes.y}),el("div",{id:"matrix-host"})]);
+  const lp=el("div",{cls:"panel"},[el("h2",{text:"Ladder — "+MAP.meta.ladderMetric}),el("div",{id:"ladder-host"})]);
+  grid.appendChild(mp); grid.appendChild(lp);
+  root.appendChild(grid);
+  root.appendChild(el("div",{cls:"panel",id:"detail"}));
+  renderSpine(); renderMatrix(); renderLadder(); renderDetail();
+}
+/* ============ Tab 4 — EXECUTION ============ */
+function prepRefs(item){
+  const m=item.match(/^everything upstream \((.+)\)$/i);
+  if(m) return m[1].split(",").map(function(s){return s.trim();});
+  return [item];
+}
+function normalizePrep(s){
+  const t=s.toLowerCase().replace(/\s+/g," ").trim();
+  /* stated-synonym set for THIS map: “prereg” is the map's own abbreviation of “pre-registration” */
+  if(/(pre-?registration|prereg)/.test(t) && /\b(file|filed|filing)\b/.test(t)) return "file the pre-registration";
+  return t;
+}
+function buildDag(){
+  const nodes=[],index={};
+  const edges=[];
+  MAP.assets.forEach(function(a){
+    a.missing.forEach(function(item){
+      prepRefs(item).forEach(function(ref){
+        const key=normalizePrep(ref);
+        if(!(key in index)){
+          index[key]=nodes.length;
+          nodes.push({id:"P"+(nodes.length+1),key:key,label:ref,targets:[]});
+        }
+        const n=nodes[index[key]];
+        if(n.targets.indexOf(a.code)<0){ n.targets.push(a.code); edges.push({p:n,a:a.code}); }
+      });
+    });
+  });
+  let maxFan=0;
+  nodes.forEach(function(n){ if(n.targets.length>maxFan) maxFan=n.targets.length; });
+  let hub=null;
+  if(edges.length>0 && maxFan>1){
+    const cands=nodes.filter(function(n){return n.targets.length===maxFan;});
+    cands.sort(function(x,y){ return x.id<y.id?-1:1; }); /* tiebreak: lexicographically smallest id */
+    if(cands.length===1||cands[0].id!==undefined) hub=cands[0];
+    if(cands.length>1 && cands[0].targets.length===cands[1].targets.length){
+      /* distinct-assets tiebreak equals fan-out here; fall back to smallest id (already sorted) */
+      hub=cands[0];
+    }
+  }
+  const withEdges={};
+  edges.forEach(function(e){ withEdges[e.a]=true; });
+  const M=Object.keys(withEdges).length;
+  const noDeps=MAP.assets.filter(function(a){return !withEdges[a.code];});
+  return {nodes:nodes,edges:edges,hub:hub,maxFan:maxFan,M:M,noDeps:noDeps};
+}
+function renderExecution(){
+  const root=document.getElementById("tab-execution");
+  const r4=MAP.decisions.filter(function(d){return d.kind==="standing-rule";})[0];
+  if(r4){
+    const gb=el("div",{cls:"gatebar"});
+    gb.appendChild(el("div",{cls:"glead",text:r4.id+" (standing rule) — gate on "+r4.appliesTo}));
+    gb.appendChild(el("div",{text:"[quoted] “"+r4.text+"”"}));
+    root.appendChild(gb);
+  }
+  const qp=el("div",{cls:"panel"},[el("h2",{text:"Decision queue"})]);
+  const tbl=el("table",{});
+  tbl.appendChild(el("thead",{},[el("tr",{},[
+    el("th",{text:"Option"}),el("th",{text:"Status"}),el("th",{text:"Next action"}),
+    el("th",{text:"Owner"}),el("th",{text:"Gate"}),el("th",{text:"Do-not-do-yet"})
+  ])]));
+  const tb=el("tbody",{});
+  MAP.assets.slice().sort(function(a,b){return a.rank-b.rank;}).forEach(function(a){
+    tb.appendChild(el("tr",{},[
+      el("td",{cls:"mono",text:a.code+" — "+a.name}),
+      el("td",{cls:"mono",text:a.status+(a.statusSource&&a.statusSource.indexOf("R")===0?" ("+a.statusSource+")":"")}),
+      el("td",{text:a.missing.join(" · ")+(a.parkedComputed?" (prep listing only — advancement parked)":"")}),
+      el("td",{text:"operator (single-operator catalog)"}),
+      a.gate?el("td",{text:a.gate}):el("td",{},[el("span",{cls:"unknown",text:"UNKNOWN"})]),
+      a.dontYet?el("td",{text:a.dontYet}):el("td",{},[el("span",{cls:"unknown",text:"UNKNOWN"})])
+    ]));
+  });
+  tbl.appendChild(tb);
+  qp.appendChild(tbl);
+  qp.appendChild(el("p",{cls:"note",text:"Status routing: R2 → AUTHORIZED-prep (TOOL-2) · R3 → QUEUED (MEM-1) · computed PARKED set → PARKED (TOOL-3) · named by no decision → catalog-only. Owner defaults to the operator: the map speaks as “me”/“future-me” and names no other owner."}));
+  root.appendChild(qp);
+  /* dependency / unlock DAG — computed, never asserted */
+  const dag=buildDag();
+  const dp=el("div",{cls:"panel"},[el("h2",{text:"Dependency / unlock DAG (prep → asset)"})]);
+  if(dag.edges.length===0){
+    dp.appendChild(el("p",{cls:"note",text:"no unlock dependencies stated in map"}));
+  }else{
+    const rowH=30, W=680, H=dag.nodes.length*rowH+30;
+    const svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"});
+    const ax={}, aOrder=MAP.assets.slice().sort(function(a,b){return a.rank-b.rank;});
+    aOrder.forEach(function(a,i){ ax[a.code]=20+i*((H-40)/Math.max(aOrder.length-1,1)); });
+    const py={};
+    dag.nodes.forEach(function(n,i){ py[n.id]=14+i*rowH; });
+    dag.edges.forEach(function(e){
+      const y1=py[e.p.id]+9, y2=ax[e.a]+9;
+      const isHub=dag.hub&&e.p.id===dag.hub.id;
+      svg.appendChild(svgEl("path",{cls:"edge"+(isHub?" hub":""),d:"M 268 "+y1+" C 340 "+y1+", 380 "+y2+", 452 "+y2}));
+    });
+    dag.nodes.forEach(function(n){
+      const y=py[n.id];
+      const isHub=dag.hub&&n.id===dag.hub.id;
+      svg.appendChild(svgEl("rect",{cls:"pnode"+(isHub?" hub":""),x:8,y:y,width:260,height:19,rx:3}));
+      const t=svgEl("text",{cls:"ntext",x:14,y:y+13});
+      t.textContent=n.id+" · "+(n.label.length>34?n.label.slice(0,33)+"…":n.label);
+      const tip=svgEl("title",{}); tip.textContent=n.label+" → "+n.targets.join(", "); t.appendChild(tip);
+      svg.appendChild(t);
+    });
+    aOrder.forEach(function(a){
+      const y=ax[a.code];
+      svg.appendChild(svgEl("rect",{cls:"anode",x:452,y:y,width:220,height:19,rx:3}));
+      const t=svgEl("text",{cls:"ntext",x:458,y:y+13});
+      t.textContent=a.code+" · "+(a.name.length>24?a.name.slice(0,23)+"…":a.name);
+      svg.appendChild(t);
+    });
+    dp.appendChild(svg);
+    if(dag.hub){
+      dp.appendChild(el("p",{cls:"mono",text:"“"+dag.hub.label+"” unlocks "+dag.hub.targets.length+" of "+dag.M+" paths"}));
+      dp.appendChild(el("p",{cls:"note",text:"Computed from the missing-lists edge set in one pass. Prep normalized by intent before edge derivation: “a filed prereg” (TOOL-3, named inside its “everything upstream (…)” item) and “file the pre-registration” (MEM-1) collapse to one node — “prereg” is the map's own abbreviation of “pre-registration”. The map states no shared benefit-qualifier for this hub, so none is rendered."}));
+    }else{
+      dp.appendChild(el("p",{cls:"mono",text:"no dominant hub"}));
+    }
+    if(dag.noDeps.length){
+      dp.appendChild(el("p",{cls:"note",text:"no unlock dependency: "+dag.noDeps.map(function(a){return a.code;}).join(", ")}));
+    }
+  }
+  root.appendChild(dp);
+}
+/* ============ cross-highlight + init ============ */
+function selectAsset(code){
+  SELECTED=code;
+  Array.prototype.forEach.call(document.querySelectorAll(".acard"),function(c){
+    c.classList.toggle("selected",c.id==="card-"+code);
+  });
+  renderSpine(); renderMatrix(); renderLadder(); renderDetail();
+}
+renderTopbar();
+renderBanner();
+renderTabs();
+renderBrief();
+renderBoard();
+renderAnalysis();
+renderExecution();
+selectAsset("MEM-3"); /* rank 1 default selection */
+document.getElementById("foot").textContent="Faithful encoding of the SOURCE MAP — absent values render UNKNOWN; conflicting values would render CONFLICT(a | b); nothing is invented. Visibility: "+MAP.meta.visibility+" · date "+MAP.meta.date+" ("+MAP.meta.dateSource+").";
+})();
+</script>
+</body>
+</html>

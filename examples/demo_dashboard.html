@@ -1,0 +1,878 @@
+<!-- note: SOURCE MAP delimiter not found; accepted by shape -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[Homelab] &amp; Public Tooling — Project Bets Catalog</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital@0;1&amp;display=swap" media="print" onload="this.media='all'">
+<style>
+/* ONE :root token table — single source of truth for all color / spacing / rule widths */
+:root{
+  --bg:#0d1117;
+  --surface:#161b22;
+  --surface2:#1c2330;
+  --surface3:#21262d;
+  --rule-c:#2d3644;
+  --ink:#e6edf3;
+  --ink-dim:#9aa7b4;
+  --ink-faint:#6b7684;
+  --red:#f85149;
+  --red-bg:#2d1517;
+  --green:#3fb950;
+  --green-bg:#12261a;
+  --teal:#39c5cf;
+  --teal-bg:#102528;
+  --violet:#bc8cff;
+  --violet-bg:#221a30;
+  --amber:#d29922;
+  --amber-bg:#2a2113;
+  --gray:#8b949e;
+  --gray-bg:#1a1f26;
+  --sel:#58a6ff;
+  --sel-bg:#0f2038;
+  --hatch-a:#232a33;
+  --hatch-b:#161b22;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --rule:1px; --rule2:3px; --rule3:5px;
+  --rad:4px;
+  --hatch-w:6px;
+  --fs-xs:11px; --fs-s:12.5px; --fs-m:14px; --fs-l:17px; --fs-xl:22px;
+  --maxw:1180px;
+  --font-sans:"IBM Plex Sans",-apple-system,"Segoe UI",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",Consolas,"Courier New",monospace;
+  --font-serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:var(--fs-m);line-height:1.5}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--s4)}
+a{color:var(--sel)}
+h2{font-size:var(--fs-l);font-family:var(--font-mono);font-weight:600;letter-spacing:.02em;margin-bottom:var(--s3)}
+h3{font-size:var(--fs-m);font-family:var(--font-mono);font-weight:600;margin-bottom:var(--s2)}
+.mono{font-family:var(--font-mono)}
+.dim{color:var(--ink-dim)}
+.faint{color:var(--ink-faint);font-size:var(--fs-xs)}
+/* top bar */
+#topbar{border-bottom:var(--rule) solid var(--rule-c);background:var(--surface)}
+#topbar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);padding-top:var(--s3);padding-bottom:var(--s3)}
+#title{font-family:var(--font-mono);font-size:var(--fs-xl);font-weight:600}
+#title .accent{color:var(--teal)}
+#tasklabel{color:var(--ink-dim);font-size:var(--fs-s);font-family:var(--font-mono)}
+.pill{border:var(--rule) solid var(--rule-c);border-radius:999px;padding:var(--s1) var(--s3);font-size:var(--fs-xs);font-family:var(--font-mono);background:var(--surface3);color:var(--ink)}
+#visdate{margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-s);color:var(--amber)}
+/* honesty banner */
+#banner{background:var(--red-bg);border-left:var(--rule3) solid var(--red);border-bottom:var(--rule) solid var(--rule-c)}
+#banner .wrap{padding-top:var(--s3);padding-bottom:var(--s3)}
+#banner .label{font-family:var(--font-mono);font-size:var(--fs-xs);font-weight:600;color:var(--red);letter-spacing:.08em;margin-bottom:var(--s1)}
+#banner .verbatim{font-family:var(--font-serif);font-size:var(--fs-m)}
+#banner .reqline{margin-top:var(--s2);font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--red)}
+#banner .chips{margin-top:var(--s2);display:flex;flex-wrap:wrap;gap:var(--s2)}
+.chip{display:inline-block;border:var(--rule) solid var(--rule-c);border-radius:var(--rad);padding:var(--s1) var(--s2);font-size:var(--fs-xs);font-family:var(--font-mono);background:var(--surface3);color:var(--ink)}
+.chip.evidence{border-color:var(--red);color:var(--ink)}
+.chip.warnc{border-color:var(--amber);color:var(--amber)}
+.chip.gatec{border-color:var(--red);color:var(--red)}
+.chip.okc{border-color:var(--green);color:var(--green)}
+.chip.quoted-tag{border-color:var(--ink-faint);color:var(--ink-faint)}
+/* tabs */
+#tabs{border-bottom:var(--rule) solid var(--rule-c);background:var(--surface)}
+#tabs .wrap{display:flex;gap:var(--s2);padding-top:var(--s2)}
+#tabs button{font-family:var(--font-mono);font-size:var(--fs-s);background:none;border:none;border-bottom:var(--rule2) solid transparent;color:var(--ink-dim);padding:var(--s2) var(--s3);cursor:pointer}
+#tabs button.active{color:var(--ink);border-bottom-color:var(--teal)}
+main .wrap{padding-top:var(--s5);padding-bottom:var(--s6)}
+section.tab{display:none}
+section.tab.active{display:block}
+.panel{background:var(--surface);border:var(--rule) solid var(--rule-c);border-radius:var(--rad);padding:var(--s4);margin-bottom:var(--s4)}
+.panel.hardrule{border-left:var(--rule2) solid var(--red)}
+.panel.dnd{border-left:var(--rule2) solid var(--gray)}
+.panel.auth{border-left:var(--rule2) solid var(--green)}
+.callout{background:var(--surface2);border:var(--rule) solid var(--rule-c);border-left:var(--rule2) solid var(--teal);border-radius:var(--rad);padding:var(--s4);margin-bottom:var(--s4);font-family:var(--font-serif);font-size:var(--fs-l)}
+.srcnote{margin-top:var(--s1)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--s3)}
+.ccard{background:var(--surface2);border:var(--rule) solid var(--rule-c);border-radius:var(--rad);padding:var(--s3)}
+.ccard h4{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--teal);letter-spacing:.05em;margin-bottom:var(--s1)}
+.ccard p{font-size:var(--fs-s)}
+ul.plain{list-style:none}
+ul.plain li{padding:var(--s1) 0;border-bottom:var(--rule) solid var(--rule-c);font-size:var(--fs-s)}
+ul.plain li:last-child{border-bottom:none}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-s)}
+th{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ink-dim);text-align:left;border-bottom:var(--rule2) solid var(--rule-c);padding:var(--s2)}
+td{border-bottom:var(--rule) solid var(--rule-c);padding:var(--s2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+/* option board */
+#board{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--s3);align-items:start}
+.bucket{background:var(--surface);border:var(--rule) solid var(--rule-c);border-radius:var(--rad)}
+.bucket .bh{padding:var(--s2) var(--s3);border-bottom:var(--rule) solid var(--rule-c);font-family:var(--font-mono);font-size:var(--fs-xs);display:flex;align-items:center;gap:var(--s2)}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+.sw.c-green{background:var(--green)} .sw.c-teal{background:var(--teal)} .sw.c-violet{background:var(--violet)}
+.sw.c-amber{background:var(--amber)} .sw.c-gray{background:var(--gray)}
+.card{margin:var(--s3);background:var(--surface2);border:var(--rule) solid var(--rule-c);border-radius:var(--rad);padding:var(--s3);cursor:pointer}
+.card .code{font-family:var(--font-mono);font-size:var(--fs-xs);background:var(--surface3);border:var(--rule) solid var(--rule-c);border-radius:var(--rad);padding:0 var(--s1);margin-right:var(--s1)}
+.card .nm{font-weight:600;font-size:var(--fs-s)}
+.card .blunt{font-family:var(--font-serif);font-size:var(--fs-s);margin:var(--s2) 0}
+.card .hc{font-style:italic;color:var(--ink-dim);font-size:var(--fs-s);margin:var(--s2) 0}
+.card .chips{display:flex;flex-wrap:wrap;gap:var(--s1);margin:var(--s2) 0}
+.card .files{margin-top:var(--s2)}
+.card .files .chip{color:var(--ink-dim)}
+.bucket.lane-shelved .card{opacity:.72;border-style:dashed}
+.bucket.lane-shelved{border-style:dashed;border-color:var(--gray)}
+.lanenote{padding:var(--s2) var(--s3);font-size:var(--fs-xs);color:var(--ink-faint);border-top:var(--rule) solid var(--rule-c)}
+#legend{margin-top:var(--s4)}
+#legend .row{display:flex;flex-wrap:wrap;gap:var(--s3);margin-top:var(--s2)}
+/* analysis */
+#analysis-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:var(--s4);align-items:start}
+@media(max-width:900px){#analysis-grid{grid-template-columns:1fr}}
+#spine .row{display:grid;grid-template-columns:36px 62px minmax(0,1fr) 110px 150px 90px;gap:var(--s2);padding:var(--s2);border-bottom:var(--rule) solid var(--rule-c);font-size:var(--fs-s);cursor:pointer;align-items:center}
+#spine .row.hd{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ink-dim);cursor:default;border-bottom:var(--rule2) solid var(--rule-c)}
+#spine .row.sel,#board .card.sel,.lrow.sel{outline:var(--rule2) solid var(--sel);background:var(--sel-bg)}
+.sortbtns{display:flex;flex-wrap:wrap;gap:var(--s2);margin-bottom:var(--s2)}
+.sortbtns button{font-family:var(--font-mono);font-size:var(--fs-xs);background:var(--surface3);border:var(--rule) solid var(--rule-c);border-radius:var(--rad);color:var(--ink-dim);padding:var(--s1) var(--s2);cursor:pointer}
+.sortbtns button.active{color:var(--ink);border-color:var(--sel)}
+svg text{font-family:var(--font-mono);font-size:var(--fs-xs);fill:var(--ink-dim)}
+svg .axisline{stroke:var(--rule-c);stroke-width:var(--rule)}
+svg .quad{fill:var(--ink-faint);font-size:10px}
+svg .dot{fill:var(--teal);stroke:var(--bg);stroke-width:2px;cursor:pointer}
+svg .dot.sel{stroke:var(--sel);stroke-width:var(--rule2)}
+svg .dagline{stroke:var(--rule-c);stroke-width:1.5px;fill:none}
+svg .nodebox{fill:var(--surface2);stroke:var(--rule-c)}
+svg .nodetxt{fill:var(--ink);font-size:var(--fs-xs)}
+.strip{background:var(--surface2);border:var(--rule) dashed var(--rule-c);border-radius:var(--rad);padding:var(--s3);margin-top:var(--s3);font-size:var(--fs-s)}
+.strip h4{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--amber);margin-bottom:var(--s1)}
+.caption{font-size:var(--fs-xs);color:var(--ink-faint);margin-top:var(--s2)}
+/* ladder */
+.lrow{display:grid;grid-template-columns:62px minmax(0,1fr) 220px 110px;gap:var(--s2);align-items:center;padding:var(--s2);border-bottom:var(--rule) solid var(--rule-c);font-size:var(--fs-s);cursor:pointer}
+.lrow:last-child{border-bottom:none}
+.hbar{height:18px;border-radius:var(--rad);border:var(--rule) solid var(--rule-c);background:repeating-linear-gradient(45deg,var(--hatch-a) 0 var(--hatch-w),var(--hatch-b) var(--hatch-w) calc(var(--hatch-w) * 2));position:relative}
+.hbar span{position:absolute;left:var(--s2);top:0;font-family:var(--font-mono);font-size:10px;color:var(--ink-dim);line-height:18px}
+/* detail */
+#detail{background:var(--surface);border:var(--rule) solid var(--rule-c);border-radius:var(--rad);padding:var(--s4);position:sticky;top:var(--s3)}
+#detail .bars{display:flex;gap:var(--s3);align-items:flex-end;margin:var(--s3) 0;height:110px}
+#detail .barcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;flex:1}
+#detail .vbar{width:26px;border-radius:var(--rad) var(--rad) 0 0;background:var(--teal)}
+#detail .vbar.unk{background:repeating-linear-gradient(45deg,var(--hatch-a) 0 var(--hatch-w),var(--hatch-b) var(--hatch-w) calc(var(--hatch-w) * 2));border:var(--rule) solid var(--rule-c);height:60%}
+#detail .barlbl{font-family:var(--font-mono);font-size:10px;color:var(--ink-dim);margin-top:var(--s1);text-align:center}
+#detail dl dt{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ink-dim);margin-top:var(--s2)}
+#detail dl dd{font-size:var(--fs-s)}
+/* execution */
+#standing{background:var(--red-bg);border:var(--rule) solid var(--red);border-left:var(--rule3) solid var(--red);border-radius:var(--rad);padding:var(--s3);margin-bottom:var(--s4);font-family:var(--font-mono);font-size:var(--fs-s)}
+footer{border-top:var(--rule) solid var(--rule-c);background:var(--surface)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:var(--s3);padding-top:var(--s3);padding-bottom:var(--s3);align-items:center}
+</style>
+</head>
+<body>
+<header id="topbar"><div class="wrap">
+  <span id="title"></span>
+  <span id="tasklabel"></span>
+  <span class="pill" id="posturepill"></span>
+  <span id="visdate"></span>
+</div></header>
+
+<div id="banner"><div class="wrap"></div></div>
+
+<nav id="tabs"><div class="wrap"></div></nav>
+
+<main><div class="wrap">
+  <section class="tab" id="tab-brief"></section>
+  <section class="tab" id="tab-board"></section>
+  <section class="tab" id="tab-analysis"></section>
+  <section class="tab" id="tab-execution"></section>
+</div></main>
+
+<footer><div class="wrap" id="foot"></div></footer>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   MAP — the single source of truth. Every rendered value below
+   traces to the source map; absent values are the literal UNKNOWN.
+   ============================================================ */
+var MAP = {
+  title_first: "Homelab",
+  title_rest: " & Public Tooling — Project Bets Catalog",
+  task_label: "project bets catalog · options review",
+  visibility: "INTERNAL",
+  date: "2026-05-02",
+  date_source: "operator-decisions heading (2026-05-02); built-via date matches",
+  posture_pill: "Options review — no commitment",
+  built_via: "quarterly homelab review (2026-05-02), self-directed",
+  blunt_note: "The “adoption-reality” column is deliberately blunt — polish ≠ pull. Read that column as the skeptic’s veto.",
+  honesty: {
+    verbatim: "positioned as personal experiments / learning artifacts — never production-ready software, never a security guarantee, never a maintained product promise. There is no external validation (0 external deployments; CI missing on 3 of 5 repos; bus-factor = 1). Outward-facing collateral (blog series, marketplace listing, demo site) stays SHELVED in the public lane.",
+    positioned_as: "personal experiments / learning artifacts",
+    never_clause: ["production-ready software", "a security guarantee", "a maintained product promise"],
+    chips: ["0 external deployments", "CI missing on 3 of 5 repos", "bus-factor = 1"]
+  },
+  axes: { x: "Setup readiness", y: "Community pull" },
+  magnitude_label: "magnitude — no quantified column in this map",
+  bottom_line: "Nothing here is a product; two things are habits worth protecting (INF-2’s verified restores, INF-1’s rebuild discipline).",
+  conclusions: [
+    { t: "State of play", x: "Nothing here is a product; two things are habits worth protecting (INF-2’s verified restores, INF-1’s rebuild discipline).", src: "honest synthesis", q: false },
+    { t: "The one public bet", x: "The only public bet with pull is PUB-1, and only if the two hardcoded format assumptions are removed — otherwise it demos poorly.", src: "honest synthesis", q: false },
+    { t: "Patterns travel, not code", x: "The reusable value for others is patterns, not code: the stale-state alert pattern (INF-3) and the restore-ledger habit (INF-2) travel; the scripts do not.", src: "honest synthesis", q: false },
+    { t: "Recommended posture", x: "Keep the foundation running; the one low-regret prep is removing PUB-1’s format assumptions, since it is the precondition for any public showing and improves my own use regardless.", src: "honest synthesis", q: false },
+    { t: "Boundary check", x: "Internal review only. No public collateral produced (blog series, marketplace listing, demo site remain SHELVED). Every asset cites a real file. No production-ready or security claim anywhere. No launch committed.", src: "boundary check", q: true }
+  ],
+  authorized: [{
+    id: "H2",
+    verbatim: "the ONLY carve-out from pure options-review: removing PUB-1’s hardcoded format assumptions — AUTHORIZED as an undated background task. Everything else stays catalog-only.",
+    assets: ["PUB-1"],
+    dod: [
+      { item: "Remove the two hardcoded format assumptions (timeline/parse.py)", src: "PUB-1 — maturity note + adoption-reality" },
+      { item: "Format auto-detection", src: "PUB-1 — missing list" }
+    ],
+    excluded: "packaging · a hosted demo GIF — remain catalog-only (H2: “everything else stays catalog-only”)",
+    size: "UNKNOWN — H2: undated background task"
+  }],
+  dnd: [
+    { x: "blog series — SHELVED (public lane; named in honesty constraint + boundary check)", q: false },
+    { x: "marketplace listing — SHELVED (public lane)", q: false },
+    { x: "demo site — SHELVED (public lane)", q: false },
+    { x: "PUB-3 restore-drill write-up — QUEUED, undated; blocked on fact-check against BACKUP_LEDGER.md (H3)", q: false },
+    { x: "PUB-1 packaging + hosted demo GIF — catalog-only (H2)", q: false },
+    { x: "H4 STANDING RULE: no repo goes public-visible before a secrets/PII sweep of its full history exists in writing", q: false },
+    { x: "INF-1 showcase — honest call: “Maintain for myself; never showcase”", q: false }
+  ],
+  dnd_note: "The map supplies no self-discipline line; this panel is built from the map’s deferred items only.",
+  standing_rule: "STANDING RULE — H4 (binds immediately): no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.",
+  shelved_lane_label: "SHELVED — public lane (outward-facing)",
+  shelved_lane_note: "Outward-facing assets render in the SHELVED lane regardless of posture; posture chips stay visible. H2’s authorization is internal prep and does not move PUB-1 out of the public lane. Zero call-to-action by construction.",
+  assets: [
+    { code:"INF-1", name:"Declarative host provisioning", section:"Section A — Infrastructure layer (foundation)", rank:2,
+      files:["provision/bootstrap.ps1","provision/roles/*.yaml","HOSTS_REGISTER.md","drills/2026-04_restore.md"], files_q:false,
+      maturity:"High (rebuilt the primary host from bare metal twice)",
+      consumer:"future-me rebuilding a dead machine under time pressure",
+      reality:"Solid for me, invisible to others. Every homelabber has their own bootstrap; nobody adopts a stranger’s. Worth keeping sharp, worthless to showcase.", reality_q:false,
+      blunt:"Solid for me, invisible to others.",
+      missing:[{x:"secrets bootstrap step",q:false},{x:"document the two manual BIOS steps",q:false}],
+      readiness:"High", pull:"None", cue:"“invisible to others … worthless to showcase”", risk:"UNKNOWN",
+      honest:"Maintain for myself; never showcase", honest_q:false,
+      posture:"maintain", posture_src:"honest call", pcolor:"teal",
+      shelved:false, status:"catalog-only", statusc:"", gate:"UNKNOWN",
+      next:"(from missing list — no commitment) secrets bootstrap step; document the two manual BIOS steps",
+      dndcell:"showcase (honest call: “never showcase”)" },
+    { code:"INF-2", name:"Backup + restore verification loop", section:"Section A — Infrastructure layer (foundation)", rank:1,
+      files:["backup/nightly.ps1","backup/verify_restore.ps1","BACKUP_LEDGER.md (14 verified restores logged)"], files_q:false,
+      maturity:"High (runs nightly; restore verified monthly)",
+      consumer:"future-me after a disk failure; family archive",
+      reality:"Highest personal value, zero external pull. “Verified restores” is the differentiator most home setups lack, but it is a habit, not a product.", reality_q:false,
+      blunt:"Highest personal value, zero external pull.",
+      missing:[{x:"offsite second copy",q:false},{x:"alert when the ledger goes stale",q:false}],
+      readiness:"High", pull:"None", cue:"“Highest personal value, zero external pull”", risk:"UNKNOWN",
+      honest:"Keep running; the ledger habit is the crown jewel", honest_q:false,
+      posture:"keep running", posture_src:"honest call", pcolor:"green",
+      shelved:false, status:"catalog-only", statusc:"", gate:"UNKNOWN",
+      next:"(from missing list — no commitment) offsite second copy; alert when the ledger goes stale",
+      dndcell:"UNKNOWN" },
+    { code:"INF-3", name:"Monitoring + stale-state alerts", section:"Section A — Infrastructure layer (foundation)", rank:4,
+      files:["monitor/heartbeat.ps1","monitor/DASH.md generator","Task Scheduler jobs (5)"], files_q:false,
+      maturity:"Medium (alerts fire; dashboard regenerates; thresholds hand-tuned)",
+      consumer:"me, weekly review",
+      reality:"Medium pull as a pattern, not as code. The “state file older than N days → alert” pattern is genuinely reusable; the scripts themselves are machine-specific.", reality_q:false,
+      blunt:"Medium pull as a pattern, not as code.",
+      missing:[{x:"extract the stale-state pattern into a copyable gist",q:false},{x:"threshold config file",q:false}],
+      readiness:"Medium", pull:"Medium as a pattern", cue:"“Medium pull as a pattern, not as code”", risk:"UNKNOWN",
+      honest:"Extract the stale-state gist; shelve the rest", honest_q:false,
+      posture:"extract gist · shelve rest", posture_src:"honest call", pcolor:"violet",
+      shelved:false, status:"catalog-only", statusc:"", gate:"UNKNOWN",
+      next:"(from missing list — no commitment) extract the stale-state pattern into a copyable gist; threshold config file",
+      dndcell:"the rest (honest call: “shelve the rest”)" },
+    { code:"PUB-1", name:"Log-to-timeline visualizer", section:"Section B — Public tooling (showcase)", rank:3,
+      files:["timeline/parse.py","timeline/render.html","3 sample datasets","timeline/README.md"], files_q:false,
+      maturity:"Medium (works on my logs; two format assumptions hardcoded)",
+      consumer:"developers who keep plaintext work logs and want a visual review",
+      reality:"Small but real niche. Plaintext-log people exist and share tools. Competes with heavier apps; wins only if setup stays under five minutes. Needs the format assumptions removed before anyone else can run it.", reality_q:false,
+      blunt:"Small but real niche.",
+      missing:[{x:"format auto-detection",q:false},{x:"packaging",q:false},{x:"a hosted demo GIF",q:false}],
+      readiness:"Medium", pull:"Small but real", cue:"“Small but real niche”", risk:"UNKNOWN",
+      honest:"Best public bet if format assumptions die", honest_q:false,
+      posture:"AUTHORIZED (prep) — H2", posture_src:"operator decision H2 (prep only)", pcolor:"green",
+      shelved:true, status:"AUTHORIZED-prep (H2)", statusc:"okc",
+      gate:"H4 standing rule — secrets/PII sweep in writing before any repo goes public-visible",
+      next:"AUTHORIZED (H2): remove the two hardcoded format assumptions — undated background task",
+      dndcell:"packaging · hosted demo GIF (catalog-only per H2)" },
+    { code:"PUB-2", name:"Dotfiles + setup scripts (public repo)", section:"Section B — Public tooling (showcase)", rank:6,
+      files:["dotfiles/ repo","install.ps1","per-tool configs (12 tools)"], files_q:false,
+      maturity:"High as artifacts; personal by nature",
+      consumer:"DIY developers browsing dotfiles for ideas",
+      reality:"Commodity. Dotfiles repos are read, starred, and never adopted wholesale. Value is reputational garnish at best.", reality_q:false,
+      blunt:"Commodity.",
+      missing:[{x:"strip machine-specific paths",q:false},{x:"a short “what’s interesting here” note",q:false}],
+      readiness:"High", pull:"Commodity", cue:"“Commodity … reputational garnish at best”", risk:"UNKNOWN",
+      honest:"Garnish; not worth active hours", honest_q:false,
+      posture:"not worth active hours", posture_src:"honest call", pcolor:"gray",
+      shelved:true, status:"catalog-only", statusc:"",
+      gate:"H4 standing rule — secrets/PII sweep in writing (repo history)",
+      next:"(from missing list — no commitment) strip machine-specific paths; a short “what’s interesting here” note",
+      dndcell:"active hours (honest call: “not worth active hours”)" },
+    { code:"PUB-3", name:"Restore-drill write-up (blog draft)", section:"Section B — Public tooling (showcase)", rank:5,
+      files:["drafts/restore_drill_post.md (2,100 words, unpublished)"], files_q:true,
+      maturity:"Low (draft; screenshots missing; claims unchecked against the ledger)",
+      consumer:"homelab readers who back up but never test restores",
+      reality:"Evergreen topic, crowded field. Restore-drill posts perform well but dozens exist. Only ships if the 14-verified-restores ledger angle survives fact-checking.", reality_q:true,
+      blunt:"Evergreen topic, crowded field.",
+      missing:[{x:"fact-check against BACKUP_LEDGER.md",q:false},{x:"screenshots",q:false},{x:"a publishable code sample",q:true}],
+      readiness:"Low", pull:"Evergreen, crowded", cue:"“Evergreen topic, crowded field”", risk:"UNKNOWN",
+      honest:"Ships only after fact-check against the ledger", honest_q:true,
+      posture:"QUEUED — H3", posture_src:"operator decision H3", pcolor:"amber",
+      shelved:true, status:"QUEUED (H3)", statusc:"warnc",
+      gate:"H3 — blocked on fact-check against BACKUP_LEDGER.md",
+      next:"QUEUED (H3, undated): fact-check against BACKUP_LEDGER.md; screenshots",
+      dndcell:"public lane — SHELVED" }
+  ]
+};
+
+/* ---------- helpers ---------- */
+function el(tag, cls, text){ var n=document.createElement(tag); if(cls){n.className=cls;} if(text!=null){n.textContent=text;} return n; }
+function chip(text, cls){ return el("span","chip"+(cls?" "+cls:""), text); }
+function qtag(){ return el("span","chip quoted-tag","[quoted]"); }
+function byCode(c){ for(var i=0;i<MAP.assets.length;i++){ if(MAP.assets[i].code===c){ return MAP.assets[i]; } } return null; }
+
+/* closed label→coordinate whitelist (leading-token match; unlisted → unmapped, never coerced) */
+var WL = [
+  { re:/^(moderate-high|medium-high)\b/, v:0.675 },
+  { re:/^(low-medium|medium-low)\b/, v:0.35 },
+  { re:/^(highest|high)\b/, v:0.85 },
+  { re:/^(medium|moderate)\b/, v:0.5 },
+  { re:/^low\b/, v:0.2 },
+  { re:/^(none|n\/a)\b/, v:"na" }
+];
+function mapLabel(raw){
+  if(raw==null||raw===""){ return {kind:"missing"}; }
+  var s=String(raw).toLowerCase().trim();
+  for(var i=0;i<WL.length;i++){ if(WL[i].re.test(s)){ return WL[i].v==="na"?{kind:"na",literal:raw}:{kind:"coord",v:WL[i].v,literal:raw}; } }
+  return {kind:"unmapped",literal:raw};
+}
+
+/* ---------- persistent chrome ---------- */
+(function chrome(){
+  var t=document.getElementById("title");
+  var acc=el("span","accent","["+MAP.title_first+"]"); t.appendChild(acc);
+  t.appendChild(document.createTextNode(MAP.title_rest));
+  document.getElementById("tasklabel").textContent=MAP.task_label;
+  document.getElementById("posturepill").textContent=MAP.posture_pill;
+  document.getElementById("visdate").textContent=MAP.visibility+" · "+MAP.date;
+  document.getElementById("visdate").title="date source: "+MAP.date_source;
+
+  var b=document.querySelector("#banner .wrap");
+  b.appendChild(el("div","label","HONESTY BOUNDARY — BINDING, EVERY ENTRY · NOT REMOVABLE"));
+  b.appendChild(el("div","verbatim","“"+MAP.honesty.verbatim+"”"));
+  var req=el("div","reqline","REQUIRED BOUNDARY: ");
+  req.appendChild(document.createTextNode("never "+MAP.honesty.never_clause.join(" · never ")));
+  b.appendChild(req);
+  var ch=el("div","chips");
+  for(var i=0;i<MAP.honesty.chips.length;i++){ ch.appendChild(chip(MAP.honesty.chips[i],"evidence")); }
+  b.appendChild(ch);
+  b.appendChild(el("div","faint srcnote","evidence chips parsed from the constraint’s cited-disqualifier parenthetical only"));
+
+  var tabs=[["brief","Brief"],["board","Option Board"],["analysis","Analysis"],["execution","Execution"]];
+  var tw=document.querySelector("#tabs .wrap");
+  for(var j=0;j<tabs.length;j++){
+    (function(id,label,first){
+      var btn=el("button",first?"active":"",label);
+      btn.addEventListener("click",function(){
+        var bs=tw.querySelectorAll("button"); for(var k=0;k<bs.length;k++){ bs[k].classList.remove("active"); }
+        btn.classList.add("active");
+        var ss=document.querySelectorAll("section.tab"); for(var m=0;m<ss.length;m++){ ss[m].classList.remove("active"); }
+        document.getElementById("tab-"+id).classList.add("active");
+      });
+      tw.appendChild(btn);
+    })(tabs[j][0],tabs[j][1],j===0);
+  }
+  document.getElementById("tab-brief").classList.add("active");
+
+  var f=document.getElementById("foot");
+  f.appendChild(chip("Built via: "+MAP.built_via));
+  f.appendChild(el("span","faint","every rendered value traces to the source map · absent → UNKNOWN · conflicting → CONFLICT(a | b)"));
+})();
+
+/* ---------- Tab 1: BRIEF ---------- */
+(function brief(){
+  var s=document.getElementById("tab-brief");
+
+  var co=el("div","callout");
+  co.appendChild(el("div",null,MAP.bottom_line));
+  co.appendChild(el("div","faint srcnote","bottom line — honest synthesis, lead"));
+  s.appendChild(co);
+
+  var counts=["zero","one","two","three","four","five","six","seven","eight","nine"];
+  var n=MAP.conclusions.length;
+  var ct=(n<counts.length)?("The "+counts[n]+" conclusions"):"The conclusions";
+  s.appendChild(el("h2",null,ct));
+  var grid=el("div","cards");
+  for(var i=0;i<MAP.conclusions.length;i++){
+    var c=MAP.conclusions[i];
+    var cc=el("div","ccard");
+    cc.appendChild(el("h4",null,c.t.toUpperCase()));
+    var p=el("p",null,c.x); cc.appendChild(p);
+    if(c.q){ cc.appendChild(qtag()); }
+    cc.appendChild(el("div","faint srcnote","source: "+c.src));
+    grid.appendChild(cc);
+  }
+  s.appendChild(grid);
+  s.appendChild(el("div","caption","card count = rendered count ("+n+")"));
+
+  var hr=el("div","panel hardrule");
+  hr.appendChild(el("h3",null,"HARD RULE"));
+  hr.appendChild(el("div",null,"POSITIONED AS: "+MAP.honesty.positioned_as));
+  hr.appendChild(el("div",null,"NEVER: "+MAP.honesty.never_clause.join(" · ")));
+  hr.appendChild(el("div","faint srcnote","restated from the binding honesty constraint; see the banner for the verbatim text"));
+  s.appendChild(hr);
+
+  var au=el("div","panel auth");
+  au.appendChild(el("h3",null,"AUTHORIZED ACTION — INTERNAL PREP ONLY"));
+  for(var a=0;a<MAP.authorized.length;a++){
+    var A=MAP.authorized[a];
+    au.appendChild(el("div",null,A.id+": “"+A.verbatim+"”"));
+    au.appendChild(el("div","faint srcnote","internal prep task on "+A.assets.join(", ")+" — not an external call-to-action; does not move the asset out of the SHELVED public lane"));
+    au.appendChild(el("h3",null,"Definition of done"));
+    var ul=el("ul","plain");
+    for(var d=0;d<A.dod.length;d++){
+      var li=el("li",null,"☐ "+A.dod[d].item);
+      li.appendChild(el("span","faint","  — "+A.dod[d].src));
+      ul.appendChild(li);
+    }
+    au.appendChild(ul);
+    au.appendChild(el("h3",null,"Task size"));
+    var tbl=el("table"); var thr=el("tr");
+    thr.appendChild(el("th",null,"Task")); thr.appendChild(el("th",null,"Source")); thr.appendChild(el("th",null,"Size"));
+    tbl.appendChild(thr);
+    for(var d2=0;d2<A.dod.length;d2++){
+      var tr=el("tr");
+      tr.appendChild(el("td",null,A.dod[d2].item));
+      tr.appendChild(el("td",null,A.dod[d2].src));
+      tr.appendChild(el("td",null,A.size));
+      tbl.appendChild(tr);
+    }
+    au.appendChild(tbl);
+    au.appendChild(el("div","faint srcnote","excluded from this authorization: "+A.excluded));
+  }
+  s.appendChild(au);
+
+  var dn=el("div","panel dnd");
+  dn.appendChild(el("h3",null,"DO NOT DO YET"));
+  var dul=el("ul","plain");
+  for(var k=0;k<MAP.dnd.length;k++){
+    var dli=el("li",null,MAP.dnd[k].x);
+    if(MAP.dnd[k].q){ dli.appendChild(qtag()); }
+    dul.appendChild(dli);
+  }
+  dn.appendChild(dul);
+  dn.appendChild(el("div","faint srcnote",MAP.dnd_note));
+  s.appendChild(dn);
+})();
+
+/* ---------- shared card builder ---------- */
+function buildCard(a){
+  var c=el("div","card"); c.setAttribute("data-code",a.code);
+  var top=el("div");
+  top.appendChild(el("span","code",a.code));
+  top.appendChild(el("span","nm",a.name));
+  c.appendChild(top);
+  var pc=el("div","chips");
+  pc.appendChild(chip("posture: "+a.posture, a.statusc));
+  if(a.shelved){ pc.appendChild(chip("SHELVED · public lane","gatec")); }
+  c.appendChild(pc);
+  var bl=el("div","blunt",a.blunt);
+  c.appendChild(bl);
+  var dims=el("div","chips");
+  dims.appendChild(chip(MAP.axes.x.toUpperCase()+": "+a.readiness));
+  dims.appendChild(chip(MAP.axes.y.toUpperCase()+": "+a.pull));
+  dims.appendChild(chip("RISK: "+a.risk));
+  c.appendChild(dims);
+  var hc=el("div","hc","“"+a.honest+"”");
+  c.appendChild(hc);
+  if(a.honest_q){ c.appendChild(qtag()); }
+  var f=el("div","files chips");
+  for(var i=0;i<a.files.length;i++){ f.appendChild(chip(a.files[i])); }
+  if(a.files_q){ f.appendChild(qtag()); }
+  c.appendChild(f);
+  c.addEventListener("click",function(){ selectAsset(a.code); });
+  return c;
+}
+
+/* ---------- Tab 2: OPTION BOARD ---------- */
+(function board(){
+  var s=document.getElementById("tab-board");
+  s.appendChild(el("h2",null,"Option Board — posture buckets derived from this map’s own words"));
+  var wrap=el("div"); wrap.id="board";
+
+  var active=[], shelved=[];
+  for(var i=0;i<MAP.assets.length;i++){ (MAP.assets[i].shelved?shelved:active).push(MAP.assets[i]); }
+  active.sort(function(a,b){return a.rank-b.rank;});
+  shelved.sort(function(a,b){return a.rank-b.rank;});
+
+  for(var j=0;j<active.length;j++){
+    var a=active[j];
+    var bk=el("div","bucket");
+    var bh=el("div","bh");
+    bh.appendChild(el("span","sw c-"+a.pcolor,""));
+    bh.appendChild(el("span",null,a.posture+" (1)"));
+    bk.appendChild(bh);
+    bk.appendChild(buildCard(a));
+    bk.appendChild(el("div","lanenote","posture source: "+a.posture_src));
+    wrap.appendChild(bk);
+  }
+  var sb=el("div","bucket lane-shelved");
+  var sh=el("div","bh");
+  sh.appendChild(el("span","sw c-gray",""));
+  sh.appendChild(el("span",null,MAP.shelved_lane_label+" ("+shelved.length+")"));
+  sb.appendChild(sh);
+  for(var k=0;k<shelved.length;k++){ sb.appendChild(buildCard(shelved[k])); }
+  sb.appendChild(el("div","lanenote",MAP.shelved_lane_note));
+  wrap.appendChild(sb);
+  s.appendChild(wrap);
+
+  var lg=el("div","panel"); lg.id="legend";
+  lg.appendChild(el("h3",null,"Legend — posture set as found in this map"));
+  var row=el("div","row");
+  var seen={};
+  for(var m=0;m<MAP.assets.length;m++){
+    var A=MAP.assets[m];
+    if(seen[A.posture]){ continue; } seen[A.posture]=true;
+    var it=el("span");
+    it.appendChild(el("span","sw c-"+A.pcolor,""));
+    it.appendChild(document.createTextNode(" "+A.posture+" — "+A.posture_src));
+    row.appendChild(it);
+  }
+  var sl=el("span");
+  sl.appendChild(el("span","sw c-gray",""));
+  sl.appendChild(document.createTextNode(" "+MAP.shelved_lane_label+" (computed set — overrides posture)"));
+  row.appendChild(sl);
+  lg.appendChild(row);
+  lg.appendChild(el("div","faint srcnote","no default posture words: every bucket label above is quoted or derived from the map’s honest calls / operator decisions"));
+  s.appendChild(lg);
+})();
+
+/* ---------- Tab 3: ANALYSIS ---------- */
+var SVGNS="http://www.w3.org/2000/svg";
+function sv(tag,attrs){ var n=document.createElementNS(SVGNS,tag); for(var k in attrs){ if(Object.prototype.hasOwnProperty.call(attrs,k)){ n.setAttribute(k,attrs[k]); } } return n; }
+
+var spineSort="rank";
+function sortAssets(key){
+  var arr=MAP.assets.slice();
+  function tier(v){ var m=mapLabel(v); if(m.kind==="coord"){return -m.v;} if(m.kind==="na"){return 1;} return 2; }
+  arr.sort(function(a,b){
+    if(key==="rank"||key==="magnitude"){ return a.rank-b.rank; }
+    if(key==="readiness"){ var t=tier(a.readiness)-tier(b.readiness); return t!==0?t:(a.rank-b.rank); }
+    if(key==="pull"){ var u=tier(a.pull)-tier(b.pull); return u!==0?u:(a.rank-b.rank); }
+    return a.rank-b.rank;
+  });
+  return arr;
+}
+
+function renderSpine(){
+  var host=document.getElementById("spine");
+  while(host.firstChild){ host.removeChild(host.firstChild); }
+  var hd=el("div","row hd");
+  hd.appendChild(el("span",null,"RANK")); hd.appendChild(el("span",null,"CODE")); hd.appendChild(el("span",null,"NAME"));
+  hd.appendChild(el("span",null,MAP.axes.x.toUpperCase())); hd.appendChild(el("span",null,MAP.axes.y.toUpperCase()));
+  hd.appendChild(el("span",null,"POSTURE"));
+  host.appendChild(hd);
+  var arr=sortAssets(spineSort);
+  for(var i=0;i<arr.length;i++){
+    (function(a){
+      var r=el("div","row"); r.setAttribute("data-code",a.code);
+      r.appendChild(el("span","mono",String(a.rank)));
+      r.appendChild(el("span","mono",a.code));
+      r.appendChild(el("span",null,a.name));
+      r.appendChild(el("span","dim",a.readiness));
+      r.appendChild(el("span","dim",a.pull));
+      r.appendChild(el("span","dim",a.posture));
+      r.addEventListener("click",function(){ selectAsset(a.code); });
+      host.appendChild(r);
+    })(arr[i]);
+  }
+  highlight();
+}
+
+function renderMatrix(host){
+  var W=560,H=400,L=70,R=20,T=30,B=50;
+  var svg=sv("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"});
+  svg.appendChild(sv("line",{x1:L,y1:H-B,x2:W-R,y2:H-B,"class":"axisline"}));
+  svg.appendChild(sv("line",{x1:L,y1:T,x2:L,y2:H-B,"class":"axisline"}));
+  var xl=sv("text",{x:(L+W-R)/2,y:H-10,"text-anchor":"middle"}); xl.textContent=MAP.axes.x+" →"; svg.appendChild(xl);
+  var yl=sv("text",{x:16,y:(T+H-B)/2,transform:"rotate(-90 16 "+((T+H-B)/2)+")","text-anchor":"middle"}); yl.textContent=MAP.axes.y+" →"; svg.appendChild(yl);
+  var ticks=[[0.2,"low"],[0.35,"low-medium"],[0.5,"medium"],[0.675,"medium-high"],[0.85,"high"]];
+  function X(v){ return L+v*(W-R-L); } function Y(v){ return (H-B)-v*(H-B-T); }
+  for(var t=0;t<ticks.length;t++){
+    var tx=sv("text",{x:X(ticks[t][0]),y:H-B+16,"text-anchor":"middle"}); tx.textContent=ticks[t][1]; svg.appendChild(tx);
+    var ty=sv("text",{x:L-6,y:Y(ticks[t][0])+3,"text-anchor":"end"}); ty.textContent=ticks[t][1]; svg.appendChild(ty);
+    svg.appendChild(sv("line",{x1:X(ticks[t][0]),y1:H-B,x2:X(ticks[t][0]),y2:H-B+4,"class":"axisline"}));
+    svg.appendChild(sv("line",{x1:L-4,y1:Y(ticks[t][0]),x2:L,y2:Y(ticks[t][0]),"class":"axisline"}));
+  }
+  /* neutral quadrant labels — the map gives no quadrant semantics */
+  var mx=X(0.5),my=Y(0.5);
+  var q1=sv("text",{x:X(0.75),y:T+14,"text-anchor":"middle","class":"quad"}); q1.textContent="high "+MAP.axes.x.toLowerCase()+" · high "+MAP.axes.y.toLowerCase(); svg.appendChild(q1);
+  var q2=sv("text",{x:X(0.25),y:T+14,"text-anchor":"middle","class":"quad"}); q2.textContent="low "+MAP.axes.x.toLowerCase()+" · high "+MAP.axes.y.toLowerCase(); svg.appendChild(q2);
+  var q3=sv("text",{x:X(0.25),y:Y(0.06),"text-anchor":"middle","class":"quad"}); q3.textContent="low · low"; svg.appendChild(q3);
+  var q4=sv("text",{x:X(0.75),y:Y(0.06),"text-anchor":"middle","class":"quad"}); q4.textContent="high "+MAP.axes.x.toLowerCase()+" · low "+MAP.axes.y.toLowerCase(); svg.appendChild(q4);
+
+  /* group plottable assets by shared coordinate (deterministic; jitter would be visual-only) */
+  var groups={}, naList=[], unmappedList=[];
+  for(var i=0;i<MAP.assets.length;i++){
+    var a=MAP.assets[i];
+    var xr=mapLabel(a.readiness), yr=mapLabel(a.pull);
+    if(xr.kind==="coord"&&yr.kind==="coord"){
+      var key=xr.v+"|"+yr.v;
+      if(!groups[key]){ groups[key]={x:xr.v,y:yr.v,items:[]}; }
+      groups[key].items.push(a);
+    } else if(yr.kind==="na"||xr.kind==="na"){ naList.push(a); }
+    else { unmappedList.push(a); }
+  }
+  for(var g in groups){ if(Object.prototype.hasOwnProperty.call(groups,g)){
+    var G=groups[g];
+    for(var d=0;d<G.items.length;d++){
+      (function(a,G,d){
+        /* deterministic radial offset for shared coordinates — visual only; true values stay in the tooltip */
+        var off=G.items.length>1?d*8-((G.items.length-1)*4):0;
+        var dot=sv("circle",{cx:X(G.x)+off,cy:Y(G.y),r:7,"class":"dot"});
+        dot.setAttribute("data-code",a.code);
+        var ti=sv("title",{}); ti.textContent=a.code+" "+a.name+" — "+MAP.axes.x+": "+a.readiness+" (mapped "+G.x+") · "+MAP.axes.y+": "+a.pull+" (mapped "+G.y+")"; dot.appendChild(ti);
+        dot.addEventListener("click",function(){ selectAsset(a.code); });
+        svg.appendChild(dot);
+        var lb=sv("text",{x:X(G.x)+off,y:Y(G.y)-12,"text-anchor":"middle"}); lb.textContent=a.code+(G.items.length>1?" ×"+G.items.length:""); svg.appendChild(lb);
+      })(G.items[d],G,d);
+    }
+  }}
+  host.appendChild(svg);
+  host.appendChild(el("div","caption","points are quantized to label buckets and jittered for legibility — jitter is not precision."));
+
+  if(naList.length){
+    var st=el("div","strip");
+    st.appendChild(el("h4",null,"n/a strip — not a point (whitelist: none / n/a)"));
+    for(var n1=0;n1<naList.length;n1++){
+      var a1=naList[n1];
+      st.appendChild(el("div",null,a1.code+" — "+MAP.axes.y+": “"+a1.pull+"” ("+MAP.axes.x+" known: "+a1.readiness+")"));
+    }
+    host.appendChild(st);
+  }
+  if(unmappedList.length){
+    var st2=el("div","strip");
+    st2.appendChild(el("h4",null,"unmapped label — insufficient data for matrix (leading token not in the closed whitelist; never coerced)"));
+    for(var n2=0;n2<unmappedList.length;n2++){
+      var a2=unmappedList[n2];
+      st2.appendChild(el("div",null,a2.code+" — "+MAP.axes.y+": “"+a2.pull+"” ("+MAP.axes.x+" known: "+a2.readiness+")"));
+    }
+    host.appendChild(st2);
+  }
+}
+
+function renderLadder(host){
+  host.appendChild(el("h3",null,"Ladder — "+MAP.magnitude_label));
+  host.appendChild(el("div","faint srcnote","no quantified values to sort numerically — all assets sit in the “not quantified” sub-section below (rank order); hatched bars carry no length meaning"));
+  var arr=MAP.assets.slice().sort(function(a,b){return a.rank-b.rank;});
+  for(var i=0;i<arr.length;i++){
+    (function(a){
+      var r=el("div","lrow"); r.setAttribute("data-code",a.code);
+      r.appendChild(el("span","mono",a.code));
+      var hb=el("div","hbar"); hb.appendChild(el("span",null,"UNKNOWN — not quantified"));
+      r.appendChild(hb);
+      r.appendChild(el("span","dim",a.cue));
+      r.appendChild(el("span","dim","risk: "+a.risk));
+      r.addEventListener("click",function(){ selectAsset(a.code); });
+      host.appendChild(r);
+    })(arr[i]);
+  }
+}
+
+var selected=null;
+function highlight(){
+  var nodes=document.querySelectorAll("[data-code]");
+  for(var i=0;i<nodes.length;i++){
+    var n=nodes[i];
+    var on=(selected!==null&&n.getAttribute("data-code")===selected);
+    if(n.namespaceURI===SVGNS){ if(on){ n.classList.add("sel"); } else { n.classList.remove("sel"); } }
+    else { if(on){ n.classList.add("sel"); } else { n.classList.remove("sel"); } }
+  }
+}
+function selectAsset(code){
+  selected=code; highlight(); renderDetail();
+}
+function renderDetail(){
+  var host=document.getElementById("detail");
+  while(host.firstChild){ host.removeChild(host.firstChild); }
+  host.appendChild(el("h3",null,"Detail"));
+  if(!selected){ host.appendChild(el("div","dim","Select an asset in the spine, matrix, or ladder.")); return; }
+  var a=byCode(selected); if(!a){ return; }
+  var hd=el("div");
+  hd.appendChild(el("span","code mono",a.code));
+  hd.appendChild(el("span","nm"," "+a.name));
+  host.appendChild(hd);
+  host.appendChild(el("div","faint srcnote",a.section));
+
+  var bars=el("div","bars");
+  function barcol(label,val){
+    var c=el("div","barcol");
+    var m=mapLabel(val);
+    if(m.kind==="coord"){ var v=el("div","vbar"); v.style.height=(m.v*100)+"%"; v.title=label+": "+val+" (mapped "+m.v+")"; c.appendChild(v); }
+    else { var u=el("div","vbar unk"); u.title=label+": "+String(val); c.appendChild(u); }
+    c.appendChild(el("div","barlbl",label+"\n"+String(val)));
+    return c;
+  }
+  bars.appendChild(barcol(MAP.axes.x,a.readiness));
+  bars.appendChild(barcol(MAP.axes.y,a.pull));
+  bars.appendChild(barcol("magnitude","not quantified"));
+  bars.appendChild(barcol("risk",a.risk));
+  host.appendChild(bars);
+
+  var dl=el("dl");
+  function row(dt,dd,q){
+    dl.appendChild(el("dt",null,dt));
+    var d=el("dd",null,dd);
+    if(q){ d.appendChild(qtag()); }
+    dl.appendChild(d);
+  }
+  row("consumer",a.consumer,false);
+  row("adoption-reality — deliberately blunt; the skeptic’s veto",a.reality,a.reality_q);
+  row("maturity",a.maturity,false);
+  var missTxt=[]; for(var i=0;i<a.missing.length;i++){ missTxt.push(a.missing[i].x); }
+  row("missing (prep to unlock)",missTxt.join(" · "),a.code==="PUB-3");
+  row("honest call","“"+a.honest+"”",a.honest_q);
+  row("posture",a.posture+" — "+a.posture_src,false);
+  row("status",a.status+(a.shelved?" · SHELVED public lane":""),false);
+  host.appendChild(dl);
+  var f=el("div","files chips");
+  for(var j=0;j<a.files.length;j++){ f.appendChild(chip(a.files[j])); }
+  if(a.files_q){ f.appendChild(qtag()); }
+  host.appendChild(el("dt","faint","real files cited"));
+  host.appendChild(f);
+}
+
+(function analysis(){
+  var s=document.getElementById("tab-analysis");
+  s.appendChild(el("h2",null,"Analysis"));
+  var grid=el("div"); grid.id="analysis-grid";
+  var left=el("div");
+
+  var sp=el("div","panel");
+  sp.appendChild(el("h3",null,"Spine — all assets (ordering authority: the ranked table)"));
+  var sb=el("div","sortbtns");
+  var keys=[["rank","rank (default)"],["readiness",MAP.axes.x.toLowerCase()],["pull",MAP.axes.y.toLowerCase()],["magnitude","magnitude (not quantified → rank order)"]];
+  for(var i=0;i<keys.length;i++){
+    (function(k,label){
+      var b=el("button",k==="rank"?"active":"",label);
+      b.addEventListener("click",function(){
+        spineSort=k;
+        var bs=sb.querySelectorAll("button"); for(var x=0;x<bs.length;x++){ bs[x].classList.remove("active"); }
+        b.classList.add("active"); renderSpine();
+      });
+      sb.appendChild(b);
+    })(keys[i][0],keys[i][1]);
+  }
+  sp.appendChild(sb);
+  var spine=el("div"); spine.id="spine"; sp.appendChild(spine);
+  left.appendChild(sp);
+
+  var mx=el("div","panel");
+  mx.appendChild(el("h3",null,"Matrix — "+MAP.axes.x+" × "+MAP.axes.y));
+  renderMatrix(mx);
+  left.appendChild(mx);
+
+  var ld=el("div","panel");
+  renderLadder(ld);
+  left.appendChild(ld);
+
+  grid.appendChild(left);
+  var det=el("div"); det.id="detail"; grid.appendChild(det);
+  s.appendChild(grid);
+  renderSpine(); renderDetail();
+})();
+
+/* ---------- Tab 4: EXECUTION ---------- */
+(function execution(){
+  var s=document.getElementById("tab-execution");
+  s.appendChild(el("h2",null,"Execution"));
+
+  var st=el("div"); st.id="standing"; st.textContent=MAP.standing_rule; s.appendChild(st);
+
+  var qp=el("div","panel");
+  qp.appendChild(el("h3",null,"Decision queue"));
+  var tbl=el("table");
+  var hr=el("tr");
+  var heads=["Option","Status","Next action","Owner","Gate","Do-not-do-yet"];
+  for(var h=0;h<heads.length;h++){ hr.appendChild(el("th",null,heads[h])); }
+  tbl.appendChild(hr);
+  var arr=MAP.assets.slice().sort(function(a,b){return a.rank-b.rank;});
+  for(var i=0;i<arr.length;i++){
+    var a=arr[i];
+    var tr=el("tr");
+    var c1=el("td");
+    c1.appendChild(el("span","code mono",a.code));
+    c1.appendChild(document.createTextNode(" "+a.name));
+    tr.appendChild(c1);
+    var c2=el("td"); c2.appendChild(chip(a.status,a.statusc)); tr.appendChild(c2);
+    var c3=el("td",null,a.next); if(a.code==="PUB-3"){ c3.appendChild(document.createTextNode("; ")); var qq=el("span",null,"a publishable code sample"); c3.appendChild(qq); c3.appendChild(qtag()); } tr.appendChild(c3);
+    tr.appendChild(el("td",null,"operator (self) — single-operator catalog"));
+    tr.appendChild(el("td",null,a.gate));
+    tr.appendChild(el("td",null,a.dndcell));
+    tbl.appendChild(tr);
+  }
+  qp.appendChild(tbl);
+  qp.appendChild(el("div","faint srcnote","status routing: H2 → PUB-1 AUTHORIZED-prep · H3 → PUB-3 QUEUED · assets named by no decision → catalog-only, gate UNKNOWN · H4 is a standing rule and renders above as a gate"));
+  s.appendChild(qp);
+
+  /* dependency / unlock DAG — computed in one pass from MAP.assets[].missing */
+  var dg=el("div","panel");
+  dg.appendChild(el("h3",null,"Dependency / unlock DAG — prep → asset"));
+  var nodes={}, order=[];
+  for(var x=0;x<MAP.assets.length;x++){
+    var A=MAP.assets[x];
+    for(var y=0;y<A.missing.length;y++){
+      var key=A.missing[y].x.toLowerCase().replace(/\s+/g," ").trim();
+      if(!nodes[key]){ nodes[key]={label:A.missing[y].x,targets:[],q:A.missing[y].q}; order.push(key); }
+      if(nodes[key].targets.indexOf(A.code)<0){ nodes[key].targets.push(A.code); }
+    }
+  }
+  var linkCount=0, maxFan=0, withPrep={}, hubKey=null;
+  for(var o=0;o<order.length;o++){
+    var nd=nodes[order[o]];
+    linkCount+=nd.targets.length;
+    for(var t=0;t<nd.targets.length;t++){ withPrep[nd.targets[t]]=true; }
+    if(nd.targets.length>maxFan){ maxFan=nd.targets.length; hubKey=order[o]; }
+  }
+  var M=0; for(var w in withPrep){ if(Object.prototype.hasOwnProperty.call(withPrep,w)){ M++; } }
+
+  if(linkCount===0){
+    dg.appendChild(el("div","dim","no unlock dependencies stated in map"));
+  } else {
+    var rowH=30, pad=20, PH=order.length*rowH+pad*2, PW=920, leftW=430, rightX=700;
+    var svg=sv("svg",{viewBox:"0 0 "+PW+" "+PH,width:"100%"});
+    var assetY={}, ac=MAP.assets.slice().sort(function(a,b){return a.rank-b.rank;});
+    for(var az=0;az<ac.length;az++){
+      var yy=pad+(az+0.5)*((PH-2*pad)/ac.length);
+      assetY[ac[az].code]=yy;
+      var bx=sv("rect",{x:rightX,y:yy-11,width:150,height:22,rx:4,"class":"nodebox"});
+      bx.setAttribute("data-code",ac[az].code);
+      svg.appendChild(bx);
+      var tx=sv("text",{x:rightX+8,y:yy+4,"class":"nodetxt"}); tx.textContent=ac[az].code+" (rank "+ac[az].rank+")"; svg.appendChild(tx);
+    }
+    for(var p=0;p<order.length;p++){
+      var nd2=nodes[order[p]];
+      var py=pad+(p+0.5)*rowH;
+      var lb=nd2.label.length>52?nd2.label.slice(0,50)+"…":nd2.label;
+      var t2=sv("text",{x:8,y:py+4,"class":"nodetxt"}); t2.textContent="P"+(p+1)+" · "+lb+(nd2.q?" [quoted]":"");
+      var ti2=sv("title",{}); ti2.textContent=nd2.label; t2.appendChild(ti2);
+      svg.appendChild(t2);
+      for(var t3=0;t3<nd2.targets.length;t3++){
+        var ay=assetY[nd2.targets[t3]];
+        svg.appendChild(sv("path",{d:"M "+leftW+" "+py+" C "+(leftW+120)+" "+py+", "+(rightX-120)+" "+ay+", "+rightX+" "+ay,"class":"dagline"}));
+      }
+    }
+    dg.appendChild(svg);
+    var noPrep=[]; for(var np=0;np<MAP.assets.length;np++){ if(!withPrep[MAP.assets[np].code]){ noPrep.push(MAP.assets[np].code); } }
+    dg.appendChild(el("div","caption","assets with no stated prep: "+(noPrep.length?noPrep.join(", "):"none")+" · distinct prep nodes: "+order.length+" · assets with ≥1 incoming prep link (M): "+M));
+    if(maxFan<2){
+      dg.appendChild(el("div","dim","no dominant hub — maximum fan-out is 1 (each prep item unlocks a single asset); the map states no shared-prep synonym set, so prep items are not merged"));
+    } else {
+      dg.appendChild(el("div","dim","“"+nodes[hubKey].label+"” unlocks "+nodes[hubKey].targets.length+" of "+M+" paths"));
+    }
+  }
+  s.appendChild(dg);
+})();
+
+/* root render ran above, strictly after its dependencies, in document order. */
+})();
+</script>
+</body>
+</html>
