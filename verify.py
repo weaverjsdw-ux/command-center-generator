@@ -1552,8 +1552,71 @@ REFERENCE_VOCAB = ["homelab", "provisioning", "backup", "restore", "dotfiles",
                    "monitoring", "showcase", "adoption-reality", "community pull"]
 
 
+_QUOTED_OPEN_RX = re.compile(
+    r"""<(\w+)[^>]*(?:class\s*=\s*['"][^'"]*\bquoted\b[^'"]*['"]"""
+    r"""|data-quoted)[^>]*>""", re.I)
+
+# Detects the spec's REAL quoted-region convention as well as the static
+# attribute this file can actually resolve. GENERATOR_PACKAGE.md section 3
+# rule 5 marks a quoted region with a visible "[quoted]" bracket token, not
+# a class="quoted" attribute - see demo_dashboard.html's qtag(), which
+# builds `<span class="chip quoted-tag">[quoted]</span>` at RUNTIME via
+# `el("span","chip quoted-tag","[quoted]")` (a DOM API call, not literal
+# markup text). The search below runs over the WHOLE raw document,
+# including inside <script> bodies, on purpose: this is used only to
+# decide what NOTE to attach (see c12), never a verdict, so there is no
+# false-FAIL risk in over-detecting it, and restricting the search to live
+# markup would make it blind to exactly the JS-rendered case it exists to
+# name.
+_QUOTED_TOKEN_RX = re.compile(r"""class\s*=\s*['"][^'"]*\bquoted\b|data-quoted|\[quoted\]""",
+                              re.I)
+
+
+def _quoted_convention_seen(html):
+    return bool(_QUOTED_TOKEN_RX.search(html))
+
+
+def _find_matching_close(html, tag_name, search_from):
+    """Return the offset just past the CLOSING tag that matches the
+    opening tag whose body starts at search_from, tracking nesting depth
+    for same-named tags rather than stopping at the first closing tag of
+    that name.
+
+    A non-greedy `.*?</tag>` (the literal starter code's approach) closes
+    on the FIRST same-tag closing tag it finds, which is wrong the moment
+    a quoted element contains a NESTED element of the same tag name
+    (`<div class="quoted"><div class="icon"></div>real quoted text</div>`)
+    - the inner </div> ends the match early and leaves "real quoted text"
+    outside the stripped region, undetected and unexcused. Depth-tracking
+    finds the true matching close instead: every same-name opening tag
+    seen before the next same-name closing tag increments depth; every
+    closing tag decrements it; the match ends when depth returns to 0.
+
+    Returns len(html) if no matching close exists (unterminated element),
+    mirroring how _mask_non_markup treats an unterminated comment - blank
+    to end of document rather than leave the span unresolved."""
+    open_rx = re.compile(r"<%s\b%s>" % (re.escape(tag_name), _ATTR_RUN), re.I)
+    close_rx = re.compile(r"</%s\s*>" % re.escape(tag_name), re.I)
+    depth = 1
+    pos = search_from
+    n = len(html)
+    while depth > 0:
+        next_close = close_rx.search(html, pos)
+        if next_close is None:
+            return n
+        next_open = open_rx.search(html, pos, next_close.start())
+        if next_open is not None:
+            depth += 1
+            pos = next_open.end()
+        else:
+            depth -= 1
+            pos = next_close.end()
+    return pos
+
+
 def _strip_quoted(html):
-    """Remove elements marked as quoted. Returns (text, markup_found).
+    """Remove elements statically marked as quoted (class="quoted" or
+    data-quoted). Returns (text, static_markup_found).
 
     Blanking is offset-preserving - the same idiom _mask_non_markup uses
     via _blank_run - so a matched quoted element's characters (including
@@ -1563,17 +1626,36 @@ def _strip_quoted(html):
     it in the returned text, which would make region_kind_at and
     lineno_at (both called against these offsets by c12) silently
     misattribute region and cite the wrong line for anything downstream of
-    a multi-line quoted block. That is exactly the kind of wrong citation
-    this project cannot ship, so this differs from the literal starter
-    snippet on that one point."""
+    a multi-line quoted block.
+
+    Nesting-aware via _find_matching_close - see its docstring for why a
+    non-greedy same-tag regex is wrong the moment a quoted element
+    contains a same-named child element.
+
+    This only ever REMOVES text it can prove is quoted; it never proves
+    the converse. See c12 for why "nothing static found here" stopped
+    being treated as "nothing is quoted" - static_markup_found is kept
+    only as a minor, best-effort signal, not a verdict input."""
     if not re.search(r"""(?:class\s*=\s*['"][^'"]*\bquoted\b|data-quoted)""",
                      html, re.I):
         return html, False
-    stripped = re.sub(
-        r"""<(\w+)[^>]*(?:class\s*=\s*['"][^'"]*\bquoted\b[^'"]*['"]"""
-        r"""|data-quoted)[^>]*>.*?</\1\s*>""",
-        lambda m: _blank_run(m.group(0)), html, flags=re.S | re.I)
-    return stripped, True
+    pieces = []
+    kept = 0
+    scan = 0
+    for m in iter(lambda: _QUOTED_OPEN_RX.search(html, scan), None):
+        if m.start() < kept:
+            # already inside a previously-stripped span (a nested quoted
+            # element caught by the outer element's own depth-tracked
+            # strip) - do not double-process it.
+            scan = m.end()
+            continue
+        close_end = _find_matching_close(html, m.group(1), m.end())
+        pieces.append(html[kept:m.start()])
+        pieces.append(_blank_run(html[m.start():close_end]))
+        kept = close_end
+        scan = close_end
+    pieces.append(html[kept:])
+    return "".join(pieces), True
 
 
 @check(12, "no call-to-action verbs outside quoted blocks", "section 8.6(c)")
@@ -1581,24 +1663,55 @@ def c12(ctx):
     """section 8.6(c): no launch/ship/publish/buy/subscribe verb outside a
     quoted block.
 
-    Region-graded exactly like checks 7-9: a hit that exists only inside a
-    <script> body, a <style> body or an HTML comment is not live
-    user-facing content, so it is reported at WARN with the adjudication
-    note rather than counted toward the live-markup verdict below.
+    WARN-ONLY BY DESIGN - THIS CHECK NEVER FAILS. An earlier revision
+    FAILed once static class="quoted"/data-quoted markup existed anywhere
+    in the file, reasoning that a document proven able to mark quoted
+    regions could have every remaining stem hit treated as unexcused.
+    Two problems made that unsupportable, and both are permanent
+    properties of what this tool can see from static text - not
+    implementation bugs to patch away:
 
-    Within live markup, section 8.6(c)'s own "except inside a quoted
-    block" carve-out needs the dashboard to actually MARK quoted regions
-    in the DOM (a "quoted" class or a data-quoted attribute) before a
-    match can be told apart from a live call to action:
-      - that markup exists somewhere in the file: quoted regions are
-        stripped first, so anything left over is a real, unexcused hit -
-        FAIL.
-      - that markup does not exist anywhere: a quoted constraint and a
-        live CTA are indistinguishable from text alone - WARN, listed for
-        a human to adjudicate, rather than guessed either way."""
+    1. The reference dashboard's OWN quoted-region convention, per
+       GENERATOR_PACKAGE.md section 3 rule 5, is a visible "[quoted]"
+       bracket annotation - not a class="quoted" attribute. demo_
+       dashboard.html implements it correctly, via `qtag()`:
+       `el("span","chip quoted-tag","[quoted]")` - a DOM API call that
+       BUILDS the marked span at runtime. No static regex over document
+       text can know which rendered text a runtime-constructed element
+       ends up wrapping. So "no static quoted markup found" never proved
+       "nothing here is quoted" - it only ever proved "not marked in a
+       way this tool can resolve," and the FAIL branch could fire on a
+       spec-compliant, correctly-quoted dashboard whose actual quoting
+       mechanism is simply invisible to a text-level check.
+    2. CTA_PATTERN is a stem grep - section 8.6(c) specifies exactly this
+       - and stems overmatch ordinary English ("ships", "publishable",
+       "buyer") that is not a call to action. Escalating that kind of hit
+       to FAIL the instant ANY quoted markup exists anywhere in the file,
+       even markup nowhere near the hit, produced a confirmed false FAIL
+       on ordinary honest-assessment prose.
+
+    So every CTA-verb hit is still found and still cited, every time -
+    nothing is dropped. What changed is that the check stopped asserting
+    a verdict (quoted vs. not) it cannot actually determine from static
+    text alone. A dashboard full of real, live calls to action still gets
+    every one of them reported, at WARN, for a human to read and act on -
+    exactly the same adjudication an unmarked file already required
+    before this change, just without ever risking exit 1 on a false
+    positive it cannot tell apart from a real one.
+
+    Two independent notes travel with a live hit:
+      - _quoted_convention_seen: whether the file shows ANY evidence of
+        the spec's real "[quoted]" convention (static or, far more
+        likely, JS-rendered) - if so, the note says so explicitly rather
+        than implying no quoting exists at all.
+      - region-graded exactly like checks 7-9, on a SEPARATE axis: a hit
+        that exists only inside a <script> body, a <style> body or an
+        HTML comment is not live user-facing content at all, and gets its
+        own WARN note rather than being folded into the live-hit note."""
     name = "no call-to-action verbs outside quoted blocks"
     rule = "section 8.6(c)"
-    text, marked = _strip_quoted(ctx.html)
+    text, _static_marked = _strip_quoted(ctx.html)
+    convention_seen = _quoted_convention_seen(ctx.html)
     cta_rx = re.compile(CTA_PATTERN, re.I)
     live_hits = []
     soft = []
@@ -1622,20 +1735,22 @@ def c12(ctx):
     soft = _cap(soft)
     if not live_hits and not soft:
         return Result(12, name, rule, PASS)
-    if marked:
-        # quoted regions are markable and were stripped: remaining live
-        # hits are real.
-        if live_hits:
-            return Result(12, name, rule, FAIL, line_details(live_hits) + soft)
-        return Result(12, name, rule, WARN, soft)
-    # no quoted-region markup exists anywhere in the file, so a quoted
-    # constraint cannot be told apart from a live call to action.
+    details = []
     if live_hits:
-        return Result(12, name, rule, WARN,
-                      ["no quoted-region markup (class=\"quoted\" or "
-                       "data-quoted); hits below need human adjudication"]
-                      + line_details(live_hits) + soft)
-    return Result(12, name, rule, WARN, soft)
+        if convention_seen:
+            details.append(
+                "this file marks quoted regions (a \"[quoted]\" token or "
+                "a quoted-bearing class name was found), but quoted "
+                "regions may be constructed at runtime and cannot be "
+                "resolved statically; hits below need human adjudication")
+        else:
+            details.append(
+                "no quoted-region marking found (class=\"quoted\", "
+                "data-quoted, or a literal \"[quoted]\" token); hits "
+                "below need human adjudication")
+        details.extend(line_details(live_hits))
+    details.extend(soft)
+    return Result(12, name, rule, WARN, details)
 
 
 @check(13, "no reference-example vocabulary absent from the source map",
