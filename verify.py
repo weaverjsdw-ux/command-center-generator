@@ -694,8 +694,18 @@ def c10(ctx):
         return Result(10, name, rule, WARN, soft) if soft \
             else Result(10, name, rule, PASS)
     if not live_hits:
+        if soft:
+            # _looks_commented_or_quoted is a same-line quote-counting
+            # heuristic, not a JS parser: ordinary prose in a comment
+            # (an apostrophe in "don't", a URL's "//" before the real
+            # declaration on the same line) can push the one genuine
+            # live assignment into this bucket. Zero confirmed-live
+            # hits is not the same claim as zero assignments existing
+            # at all when something MAP-shaped was found; WARN and let
+            # a human look, rather than FAIL a page that may be fine.
+            return Result(10, name, rule, WARN, soft)
         return Result(10, name, rule, FAIL,
-                      ["no MAP object assignment found"] + soft)
+                      ["no MAP object assignment found"])
     return Result(10, name, rule, FAIL,
                   ["%d MAP assignments; section 8.2 requires exactly one"
                    % len(live_hits)] + line_details(live_hits) + soft)
@@ -808,7 +818,7 @@ def c11(ctx):
             problems.append("line %d: %s: %s" % (lineno, prop, value[:80]))
     soft = _soft_color_literals(ctx)
     if problems:
-        return Result(11, name, rule, FAIL, problems[:10] + soft)
+        return Result(11, name, rule, FAIL, _cap(problems) + soft)
     if soft:
         return Result(11, name, rule, WARN, soft)
     return Result(11, name, rule, PASS)
