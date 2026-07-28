@@ -155,21 +155,42 @@ _JS_STATE_LABEL = {
 }
 
 
+# Sentinel for last_code_char: "a value (string, template literal, or
+# regex literal) was JUST produced here" - as opposed to last_code_char
+# holding an actual source character. A '/' right after a produced value
+# is division (`"a" / 2`, `` `a` / 2 ``, `/x/ / 2`), exactly like a '/'
+# right after an identifier, number, or closing bracket/paren already is.
+# Never equal to any real character _scan_js_states can see, so it can't
+# collide with one.
+_JS_AFTER_VALUE = "\x00"
+
+
 def _js_regex_may_start(prev_code_char):
     """Best-effort disambiguation of a bare '/' between "start of a regex
-    literal" and "division operator", using only the previous non-
-    whitespace character seen while in "code" state. A '/' right after an
-    identifier/number/closing bracket is (almost always) division; a '/'
-    anywhere else - after an operator, punctuation, or at the very start
-    - can start a regex literal. This is the same lightweight heuristic
-    lightweight JS syntax highlighters use; it is not perfect (it cannot
-    see keywords like `return` or `typeof`), but getting it wrong can
-    only ever widen what counts as "not live code" (a division treated as
-    a regex-open still just consumes characters as non-code state until
-    the next unescaped '/'), never narrow it - so a mistake here cannot
-    turn a real string/comment into "live", only the reverse."""
+    literal" and "division operator", using only the last code-producing
+    token seen while in "code" state. A '/' right after a value -
+    an identifier, a number, a closing bracket/paren/brace, or a just-
+    closed string/template/regex literal (_JS_AFTER_VALUE) - is division.
+    A '/' after an operator, punctuation, or at the very start can open a
+    regex literal. This is the standard lightweight disambiguation JS
+    syntax highlighters use; it is not perfect (it cannot see keywords
+    like `return` or `typeof`, which also make a following '/' a regex).
+
+    Getting this wrong in EITHER direction is a real correctness bug, not
+    a safe default: misreading a live '/' as a regex-open swallows
+    real code as non-code state, which is exactly the false negative
+    (check 10 sees a live MAP assignment demoted to "not live" and WARNs
+    or PASSes instead of FAILing) - not some inert, harmless direction.
+    Misreading a regex-open as division instead leaves the regex's own
+    quote/bracket characters to be interpreted as ordinary code, which
+    can equally mis-tokenize what follows. There is no safe direction to
+    round errors toward here; the fix is to get more cases right, which
+    is what _JS_AFTER_VALUE does for the specific case a value literal
+    was just produced."""
     if prev_code_char == "":
         return True
+    if prev_code_char == _JS_AFTER_VALUE:
+        return False
     if prev_code_char.isalnum() or prev_code_char in "_$)]}":
         return False
     return True
@@ -197,9 +218,16 @@ def _scan_js_states(text):
     Deliberately still not a full JS parser: automatic-semicolon-
     insertion edge cases and the exact regex/division rule (which needs
     keyword lookback, not just the previous character) are out of scope.
-    Its failure mode is bounded and one-directional by construction - see
-    _js_regex_may_start - so it cannot manufacture a false "live" the way
-    the heuristic it replaces could."""
+    A miscall in _js_regex_may_start is a real bug, not a safe default in
+    either direction - misreading a live '/' as a regex-open swallows
+    real code as non-code state, which is exactly the false-negative
+    failure mode this scanner exists to remove (a live MAP assignment
+    demoted to WARN/PASS instead of FAILing). last_code_char is updated
+    on every code character AND on every point a string, template
+    literal, or regex literal closes (via the _JS_AFTER_VALUE sentinel),
+    so a '/' immediately following a closed literal is still correctly
+    read as division, not judged against whatever token preceded that
+    literal's OPENING quote."""
     n = len(text)
     states = [_JS_CODE] * n
     stack = [[_JS_CODE, 0]]   # (state, brace_depth) - depth only used by
@@ -259,7 +287,7 @@ def _scan_js_states(text):
                 for k in range(i, min(j, n)):
                     states[k] = _JS_REGEX
                 i = j
-                last_code_char = "/"
+                last_code_char = _JS_AFTER_VALUE
                 continue
             states[i] = _JS_CODE
             if len(stack) > 1:
@@ -303,6 +331,7 @@ def _scan_js_states(text):
             if ch == quote:
                 i += 1
                 stack.pop()
+                last_code_char = _JS_AFTER_VALUE
                 continue
             i += 1
             continue
@@ -316,6 +345,7 @@ def _scan_js_states(text):
             if ch == "`":
                 i += 1
                 stack.pop()
+                last_code_char = _JS_AFTER_VALUE
                 continue
             if ch == "$" and nxt == "{":
                 states[i] = state
@@ -1144,20 +1174,24 @@ INJECTIONS.update({
 })
 
 INJECTIONS.update({
-    # The duplicate sits on a line with an apostrophe-bearing string
-    # BEFORE the assignment (someFunc("don't");) - the exact shape that
-    # defeated the same-line quote-parity heuristic check 10 used to use
-    # (an odd count of quote characters earlier on the line, with no
-    # actual string spanning into the assignment). This strengthens the
-    # input to prove the real JS state scanner correctly resolves the
-    # apostrophe as closed inside its own double-quoted string rather
-    # than reproducing the false negative; it does not change what the
-    # injection is supposed to prove, so the expected set stays {10}.
-    10: ("second MAP object assignment, on a line with an "
-         "apostrophe-bearing string before it (regression guard)",
+    # The duplicate sits on a line combining BOTH shapes that have
+    # defeated an earlier version of check 10's live/not-live
+    # disambiguation: a closed string immediately followed by a bare '/'
+    # (a division operator that an earlier scanner bug misread as opening
+    # a regex literal, which then ran away and swallowed the assignment
+    # as non-code state), AND an apostrophe-bearing string before the
+    # assignment (which defeated the same-line quote-parity heuristic
+    # check 10 used before that). This strengthens the input so a future
+    # regression in either mechanism trips the self-test; it does not
+    # change what the injection is supposed to prove, so the expected
+    # set stays {10}.
+    10: ("second MAP object assignment, on a line combining a "
+         "string-then-division token and an apostrophe-bearing "
+         "string before it (regression guard)",
          _inject_before(
              "function render()",
-             "someFunc(\"don't\"); var MAP = { assets: [] };\n"),
+             "var ratio = \"a\" / 2; someFunc(\"don't\"); "
+             "var MAP = { assets: [] };\n"),
          {10}),
     11: ("hardcoded hex color outside :root",
          _inject_before("</style>", "h1{ color:#ff0000; }\n"),
