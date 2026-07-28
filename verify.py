@@ -100,11 +100,31 @@ NOT_CHECKED = [
 _TAG_RX = re.compile(r"""<([a-zA-Z][\w-]*)\b(?:"[^"]*"|'[^']*'|[^>"'])*>""")
 
 
-def _tag_matches(ln, tag_name):
-    """Yield full tag text for every occurrence of <tag_name ...> on ln."""
-    for tag_m in _TAG_RX.finditer(ln):
-        if tag_m.group(1).lower() == tag_name:
-            yield tag_m.group(0)
+def _all_tags(ctx):
+    """Yield (lineno, tag_name_lower, tag_text) for every opening tag in
+    the document. Matching runs over the whole document text, not
+    line-by-line: a tag whose closing '>' lands on a physical line
+    different from its '<' is ordinary, valid HTML (attribute values
+    wrap), and a per-line scan would silently never see it as one tag
+    at all - not a quoting edge case, a structural one."""
+    for m in _TAG_RX.finditer(ctx.html):
+        lineno = ctx.html.count("\n", 0, m.start()) + 1
+        yield lineno, m.group(1).lower(), m.group(0)
+
+
+def _merge_hits(*hit_lists):
+    """Merge several (lineno, text) hit lists into one, deduplicated by
+    line number, so a violation two independent detection paths both
+    caught is reported once, not twice."""
+    merged = {}
+    for hits in hit_lists:
+        for lineno, text in hits:
+            merged.setdefault(lineno, text)
+    return sorted(merged.items())
+
+
+def _flatten(text):
+    return re.sub(r"\s+", " ", text).strip()
 
 
 @check(1, 'no <script type="module">', "section 7/section 8.1")
@@ -112,12 +132,17 @@ def c01(ctx):
     name = 'no <script type="module">'
     rule = "section 7/section 8.1"
     type_module_rx = re.compile(r"""type\s*=\s*['"]module['"]""", re.I)
-    hits = []
-    for i, ln in enumerate(ctx.lines):
-        for tag_text in _tag_matches(ln, "script"):
-            if type_module_rx.search(tag_text):
-                hits.append((i + 1, ln))
-                break
+    tag_hits = [(lineno, _flatten(tag_text))
+                for lineno, tag_name, tag_text in _all_tags(ctx)
+                if tag_name == "script" and type_module_rx.search(tag_text)]
+    # Union with the old direct per-line substring search: for this
+    # file://-breaker check the costs are asymmetric. A miss ships a
+    # blank page; a false flag costs a human one glance at a cited line
+    # to see it's inside a string literal. Deliberately over-report -
+    # do not generalise this union to checks whose false positives land
+    # on ordinary content (see check 2).
+    direct_hits = ctx.find(r"""<script[^>]*type\s*=\s*['"]module['"]""", re.I)
+    hits = _merge_hits(tag_hits, direct_hits)
     return fail_on_hits(1, name, rule, hits)
 
 
@@ -175,12 +200,13 @@ def c06(ctx):
     name = "no <script src=> at all"
     rule = "section 7 all executable code inlined"
     src_rx = re.compile(r"\ssrc\s*=", re.I)
-    hits = []
-    for i, ln in enumerate(ctx.lines):
-        for tag_text in _tag_matches(ln, "script"):
-            if src_rx.search(tag_text):
-                hits.append((i + 1, ln))
-                break
+    tag_hits = [(lineno, _flatten(tag_text))
+                for lineno, tag_name, tag_text in _all_tags(ctx)
+                if tag_name == "script" and src_rx.search(tag_text)]
+    # Union with the old direct per-line substring search - same
+    # asymmetric-cost reasoning as check 1 above.
+    direct_hits = ctx.find(r"<script[^>]*\ssrc\s*=", re.I)
+    hits = _merge_hits(tag_hits, direct_hits)
     return fail_on_hits(6, name, rule, hits)
 
 
@@ -197,19 +223,21 @@ def _is_font_host(url):
 
 def _external_refs(ctx):
     """Return [(lineno, url, is_link_tag)] for every http(s) resource ref.
-    Scoped per-tag: an <a href> on the same line as a <link>/<script>/<img>
-    no longer hides or absorbs the other's reference."""
+    Tag matching is document-wide (via _all_tags), so a <link>/<script>
+    tag whose attributes wrap onto a second line is still recognized as
+    one tag, and per-tag rather than per-line, so an <a href> sharing
+    text with a <link>/<script>/<img> can't hide or absorb the other's
+    reference."""
     out = []
     attr_rx = re.compile(r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""",
                          re.I)
+    for lineno, tag_name, tag_text in _all_tags(ctx):
+        if tag_name == "a":
+            continue  # anchors are navigation, not resource loads
+        attr_m = attr_rx.search(tag_text)
+        if attr_m:
+            out.append((lineno, attr_m.group(1), tag_name == "link"))
     for i, ln in enumerate(ctx.lines):
-        for tag_m in _TAG_RX.finditer(ln):
-            tag_name = tag_m.group(1).lower()
-            if tag_name == "a":
-                continue  # anchors are navigation, not resource loads
-            attr_m = attr_rx.search(tag_m.group(0))
-            if attr_m:
-                out.append((i + 1, attr_m.group(1), tag_name == "link"))
         for m in re.finditer(r"url\(\s*['\"]?(https?://[^'\")]+)", ln, re.I):
             out.append((i + 1, m.group(1), False))
     return out
@@ -238,33 +266,33 @@ def c07(ctx):
     return Result(7, name, rule, PASS)
 
 
-def _local_ref_tag(ln):
-    """True if some non-anchor tag on this line carries a local src=/href=,
-    checked per-tag (not per-line) so an <a href> sharing a line with a
-    real local <link>/<script>/<img> can't hide or falsely absorb it."""
+def _local_ref_tags(ctx):
+    """Yield (lineno, tag_text) for every non-anchor tag carrying a local
+    src=/href=, document-wide (via _all_tags) so a tag whose attributes
+    wrap onto a second line is still recognized as one tag, and per-tag
+    so an <a href> sharing text with a real local <link>/<script>/<img>
+    can't hide or falsely absorb it."""
     local_attr_rx = re.compile(
         r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""")
-    for tag_m in _TAG_RX.finditer(ln):
-        tag_name = tag_m.group(1).lower()
+    for lineno, tag_name, tag_text in _all_tags(ctx):
         if tag_name == "a":
             continue  # anchors are navigation, not resource loads
-        if local_attr_rx.search(tag_m.group(0)):
-            return True
-    return False
+        if local_attr_rx.search(tag_text):
+            yield lineno, tag_text
 
 
 @check(8, "no local file references", "section 7 zero external local files")
 def c08(ctx):
     name = "no local file references"
     rule = "section 7 zero external local files"
-    hits = []
+    hits = {}
+    for lineno, tag_text in _local_ref_tags(ctx):
+        hits[lineno] = _flatten(tag_text)
     for i, ln in enumerate(ctx.lines):
-        if _local_ref_tag(ln):
-            hits.append((i + 1, ln))
-        elif re.search(r"url\(\s*['\"]?(?!data:|https?:|#)[^)'\"]+\.[a-z0-9]{2,5}",
-                       ln, re.I):
-            hits.append((i + 1, ln))
-    return fail_on_hits(8, name, rule, hits)
+        if re.search(r"url\(\s*['\"]?(?!data:|https?:|#)[^)'\"]+\.[a-z0-9]{2,5}",
+                     ln, re.I):
+            hits.setdefault(i + 1, ln)
+    return fail_on_hits(8, name, rule, sorted(hits.items()))
 
 
 @check(9, "every <img src=> is a data: URI", "section 7")
