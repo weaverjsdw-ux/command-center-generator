@@ -88,14 +88,37 @@ NOT_CHECKED = [
 # checks
 # --------------------------------------------------------------------------
 
+# Matches one whole opening tag at a time, respecting quoted attribute
+# values. Naive "[^>]*" tag matching breaks on a literal '>' inside a
+# quoted attribute (e.g. title="a>b"), which is valid HTML5 - only '<',
+# '&', and the enclosing quote need escaping inside an attribute value.
+# Such a '>' would wrongly end the match early and hide any attribute
+# that comes after it (a real src=/href=/type= could be missed
+# entirely). This alternates over whole quoted runs (which may contain
+# '>') and single non-quote-non-'>' characters, so a quoted '>' can
+# never prematurely close the tag.
+_TAG_RX = re.compile(r"""<([a-zA-Z][\w-]*)\b(?:"[^"]*"|'[^']*'|[^>"'])*>""")
+
+
+def _tag_matches(ln, tag_name):
+    """Yield full tag text for every occurrence of <tag_name ...> on ln."""
+    for tag_m in _TAG_RX.finditer(ln):
+        if tag_m.group(1).lower() == tag_name:
+            yield tag_m.group(0)
+
 
 @check(1, 'no <script type="module">', "section 7/section 8.1")
 def c01(ctx):
     name = 'no <script type="module">'
     rule = "section 7/section 8.1"
-    return fail_on_hits(
-        1, name, rule,
-        ctx.find(r"""<script[^>]*type\s*=\s*['"]module['"]""", re.I))
+    type_module_rx = re.compile(r"""type\s*=\s*['"]module['"]""", re.I)
+    hits = []
+    for i, ln in enumerate(ctx.lines):
+        for tag_text in _tag_matches(ln, "script"):
+            if type_module_rx.search(tag_text):
+                hits.append((i + 1, ln))
+                break
+    return fail_on_hits(1, name, rule, hits)
 
 
 def _script_body_lines(ctx):
@@ -151,16 +174,17 @@ def c05(ctx):
 def c06(ctx):
     name = "no <script src=> at all"
     rule = "section 7 all executable code inlined"
-    return fail_on_hits(6, name, rule, ctx.find(r"<script[^>]*\ssrc\s*=", re.I))
+    src_rx = re.compile(r"\ssrc\s*=", re.I)
+    hits = []
+    for i, ln in enumerate(ctx.lines):
+        for tag_text in _tag_matches(ln, "script"):
+            if src_rx.search(tag_text):
+                hits.append((i + 1, ln))
+                break
+    return fail_on_hits(6, name, rule, hits)
 
 
 FONT_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com")
-
-# Matches one whole opening tag at a time so a src=/href= match can be
-# attributed to the specific tag it lives in, not merely "somewhere on
-# this line" - a line may legitimately mix an <a href> with a <link href>
-# or a <script src>, and each needs its own navigation-vs-resource verdict.
-_TAG_RX = re.compile(r"<([a-zA-Z][\w-]*)\b[^>]*>")
 
 
 def _is_font_host(url):
@@ -335,12 +359,17 @@ INJECTIONS.update({
         _inject_before("</head>",
                        '<script src="https://cdn.example.com/x.js"></script>\n'),
         {6, 7}),
-    7: ("external non-fonts stylesheet",
+    7: ("external non-fonts stylesheet, tag carries an unescaped '>' "
+        "in an attribute before href (regression guard)",
         _inject_before("</head>",
-                       '<link rel="stylesheet" href="https://cdn.example.com/a.css">\n'),
+                       '<link title="a>b" rel="stylesheet" '
+                       'href="https://cdn.example.com/a.css">\n'),
         {7}),
-    8: ("local relative stylesheet reference",
-        _inject_before("</head>", '<link rel="stylesheet" href="./local.css">\n'),
+    8: ("local relative stylesheet reference, tag carries an unescaped "
+        "'>' in an attribute before href (regression guard)",
+        _inject_before("</head>",
+                       '<link title="a>b" rel="stylesheet" '
+                       'href="./local.css">\n'),
         {8}),
     9: ("img src that is not a data: URI",
         _inject_before("</body>", '<img src="#" alt="x">\n'),
