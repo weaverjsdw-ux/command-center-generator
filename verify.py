@@ -2402,6 +2402,288 @@ def c16(ctx):
 
 
 # --------------------------------------------------------------------------
+# check 17: per-example data-faithfulness fixtures (section 8.4/8.5, partial)
+# --------------------------------------------------------------------------
+
+# Per-fixture expected data, keyed by the --expect name. Only what is
+# mechanically checkable: the asset codes that must appear in MAP, the
+# rank each code must be recorded at, and the source map's own
+# binding-constraint sentence, verbatim. 'selftest' backs the self-test
+# harness (see _statuses) so this check is actually exercisable instead
+# of permanently SKIPping for lack of --expect; its values match the
+# FIXTURE's MAP literal exactly, one asset, no banner requirement.
+# 'research' is given by the task spec, matched against
+# examples/research_portfolio_map.md and examples/research_dashboard.html.
+# 'demo' is derived from examples/demo_source_map.md: asset codes and
+# ranks from its "Setup readiness x community pull" ranked table, and
+# the banner from its "Honesty constraint (binding, every entry)"
+# sentence's bolded never-clause (trailing period omitted, same
+# convention as 'research', so the substring check does not depend on
+# whatever punctuation happens to follow it in the rendered markup).
+EXPECTATIONS = {
+    "selftest": {
+        "codes": ["AAA-1"],
+        "ranks": {"AAA-1": 1},
+        "banner": "",
+    },
+    "research": {
+        "codes": ["MEM-1", "MEM-2", "MEM-3", "TOOL-1", "TOOL-2", "TOOL-3"],
+        "ranks": {"MEM-3": 1, "TOOL-2": 2, "MEM-1": 3,
+                  "TOOL-1": 4, "MEM-2": 5, "TOOL-3": 6},
+        "banner": "never validated findings, never recommendations, "
+                  "never a causal claim",
+    },
+    "demo": {
+        "codes": ["INF-1", "INF-2", "INF-3", "PUB-1", "PUB-2", "PUB-3"],
+        "ranks": {"INF-2": 1, "INF-1": 2, "PUB-1": 3,
+                  "INF-3": 4, "PUB-3": 5, "PUB-2": 6},
+        "banner": "never production-ready software, never a security "
+                  "guarantee, never a maintained product promise",
+    },
+}
+
+
+def _skip_noncode(text, i):
+    """If text[i] opens a quoted string ('...', "...", `...`, backslash
+    escapes honoured) or a comment (// to end of line, /* to */), return
+    the offset just past its close. Otherwise return None.
+
+    Shared by _map_body and _map_entries so both scans agree on what
+    counts as live structure: a brace, a comma or a quote character
+    sitting INSIDE a string value (`code: "A{B"`) or a comment can never
+    be mistaken for JS structure by either one. An unterminated string
+    or comment is treated as running to end of text rather than
+    resynchronising mid-scan and risking a wrong brace-depth count in
+    either direction - the same fail-safe choice _mask_non_markup makes
+    for an unterminated comment or <script> body elsewhere in this
+    file."""
+    n = len(text)
+    c = text[i]
+    if c in ("'", '"', "`"):
+        j = i + 1
+        while j < n:
+            if text[j] == "\\":
+                j += 2
+                continue
+            if text[j] == c:
+                return j + 1
+            j += 1
+        return n
+    if c == "/" and i + 1 < n and text[i + 1] == "/":
+        nl = text.find("\n", i)
+        return n if nl == -1 else nl + 1
+    if c == "/" and i + 1 < n and text[i + 1] == "*":
+        close = text.find("*/", i + 2)
+        return n if close == -1 else close + 2
+    return None
+
+
+def _map_body(html):
+    """Text of the MAP object literal (its outer braces included), or
+    None if it cannot be located.
+
+    Brace depth is counted only over characters _skip_noncode says are
+    live code - never inside a quoted string or a comment. A naive,
+    string-blind counter that scans every '{'/'}' character regardless
+    of context is wrong in two distinct, opposite ways, and an
+    unescaped brace inside a string value (`title_first: "Home{lab"`,
+    or a stray '}' the same way) can trigger either one depending on
+    which brace it is:
+
+    - a spurious '}' inside a string reads as MAP's own closing brace
+      and stops the scan too EARLY, truncating the returned body before
+      the real end. That shrinks what check 17 can inspect - codes and
+      ranks that exist further down are reported missing - which is a
+      false FAIL on faithful data, not a false PASS: fewer characters to
+      search can only ever ADD "not found" problems, never remove one
+      that should be there.
+    - a spurious '{' inside a string inflates the depth count by one, so
+      the real closing brace only brings depth to 1, not 0, and the scan
+      runs too LATE, past MAP's true end into unrelated document text.
+      That is the more dangerous direction: the over-captured tail is
+      text check 17 was never meant to search, and if it happens to
+      contain something code:/rank:-shaped it can manufacture either a
+      false PASS (an accidental match papering over a real absence) or,
+      under c17's own-field-uniqueness rule, a false FAIL (a second,
+      unrelated "owner" of a code that was faithfully recorded once).
+
+    _skip_noncode removes both failure modes by construction: every
+    character this function counts as '{' or '}' is one _skip_noncode
+    agrees is live code, so neither a stray '{' nor a stray '}' sitting
+    inside a string or comment can register as either kind of brace.
+    Verified empirically, not just reasoned about - see this task's
+    break-it notes for the discriminating test (an UNBALANCED brace
+    inside a string on each side; a balanced pair like `"A{B}C"` does
+    not exercise this scanner at all, since naive counting also nets
+    zero on it)."""
+    m = re.search(r"(?:const|let|var)\s+MAP\s*=\s*", html)
+    if not m:
+        return None
+    start = html.find("{", m.end())
+    if start == -1:
+        return None
+    depth = 0
+    i = start
+    n = len(html)
+    while i < n:
+        skip = _skip_noncode(html, i)
+        if skip is not None:
+            i = skip
+            continue
+        c = html[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return html[start:i + 1]
+        i += 1
+    return None
+
+
+def _map_entries(body):
+    """[(start, end)] offsets, into `body`, of every object literal
+    nested exactly one brace level inside MAP's own outer object - one
+    span per asset entry in `assets: [ {...}, {...} ]`, plus any other
+    single-object field MAP happens to carry (e.g. `honesty: {...}`,
+    `axes: {...}`). The extra spans are harmless: c17 only ever asks
+    whether an asset CODE and its RANK co-occur in the same span, and no
+    non-asset field carries either shape of text.
+
+    This replaces a naive `re.split(r"}\\s*,", body)` chunker. That
+    approach also breaks a single asset entry into fragments at any
+    nested array's own '},' (`missing:[{x:...},{x:...}]` appears inside
+    every entry in both example dashboards) - harmless ONLY because both
+    real examples happen to write `code` and `rank` next to each other
+    before any nested field. A dashboard that instead wrote a nested
+    array field before `rank:` in one entry's own field order would have
+    its rank split into a different fragment than its code, and the
+    naive check would FAIL a genuinely faithful dashboard. Depth is
+    tracked with the same _skip_noncode logic _map_body uses, so a
+    string or comment inside an entry can't shift the count either.
+
+    depth 1 is MAP's own outer object and is deliberately never
+    captured as a span: doing so would make every code/rank pair
+    trivially co-occur in "the whole document," defeating the pairing
+    check entirely."""
+    spans = []
+    n = len(body)
+    i = 0
+    depth = 0
+    entry_start = None
+    while i < n:
+        skip = _skip_noncode(body, i)
+        if skip is not None:
+            i = skip
+            continue
+        c = body[i]
+        if c == "{":
+            depth += 1
+            if depth == 2:
+                entry_start = i
+        elif c == "}":
+            if depth == 2 and entry_start is not None:
+                spans.append((entry_start, i + 1))
+                entry_start = None
+            depth -= 1
+        i += 1
+    return spans
+
+
+@check(17, "expected asset codes, ranks, and banner text present", "section 8.4/section 8.5")
+def c17(ctx):
+    """section 8.4/8.5 (partial): per-example data faithfulness, gated
+    behind --expect.
+
+    This is the one check in the file that asserts a dashboard carries
+    SPECIFIC data rather than checking a structural or hygiene property
+    every dashboard must share - so it only runs when the caller names
+    which fixture to check against (EXPECTATIONS), and SKIPs otherwise
+    rather than silently comparing against nothing.
+
+    Ctx.js_state_at is not used here at all - it classifies JS lexical
+    state for advisory notes on OTHER checks' findings, and has no
+    bearing on locating or reading a data literal's own text. Nothing in
+    this check may let it downgrade or suppress a finding; it is simply
+    not part of this check's reasoning to begin with.
+
+    Failure-direction discipline: an unknown --expect name is a FAIL
+    naming the known fixtures (never a silent SKIP - a typo in the
+    fixture name must not look like "nothing wrong here"); an
+    unlocatable MAP is a FAIL with an explicit reason (never a PASS -
+    inability to check is not evidence of correctness); a missing code,
+    a code owning zero or more than one code: field, a wrong rank, or
+    absent banner text are each their own FAIL line, capped at 10 like
+    every other check in this file. The rank check requires the code's
+    OWN code: field, in exactly one MAP entry, to carry the right rank -
+    not just "the code and the rank both appear somewhere in one chunk"
+    - because a decoy object anywhere else in MAP (a bogus assets[]
+    entry, or an unrelated field) can otherwise vouch for a wrong real
+    entry's rank; see _map_entries and this task's break-it notes."""
+    name = "expected asset codes, ranks, and banner text present"
+    rule = "section 8.4/section 8.5"
+    if not ctx.expect:
+        return Result(17, name, rule, SKIP, ["no --expect fixture given"])
+    exp = EXPECTATIONS.get(ctx.expect)
+    if exp is None:
+        return Result(17, name, rule, FAIL,
+                      ["unknown fixture %r; known: %s"
+                       % (ctx.expect, ", ".join(sorted(EXPECTATIONS)))])
+    body = _map_body(ctx.html)
+    if body is None:
+        return Result(17, name, rule, FAIL,
+                      ["could not locate the MAP object literal to inspect"])
+    problems = []
+    for code in exp["codes"]:
+        if code not in body:
+            problems.append("asset code %s absent from MAP" % code)
+    entries = [body[s:e] for s, e in _map_entries(body)]
+    for code, rank in exp["ranks"].items():
+        # A code must own its own `code:"X"` field in EXACTLY one entry -
+        # not merely appear as a substring somewhere inside a chunk that
+        # also happens to contain the right rank number. Checking for
+        # co-occurrence alone (code in chunk AND rank pattern in chunk)
+        # is fooled by a decoy: a second, unrelated object anywhere in
+        # MAP that pairs the right code with the right rank (e.g. a
+        # bogus extra `assets[]` entry, or an unrelated field elsewhere
+        # in the object) makes that co-occurrence true even while the
+        # REAL asset entry for that code carries a wrong rank -
+        # confirmed empirically during this task's own break-it testing
+        # (a genuinely unfaithful dashboard passed under the earlier,
+        # co-occurrence-only version of this loop). Requiring the code's
+        # OWN field, and requiring it to own exactly one, closes that:
+        # zero owners is "code not found", more than one is itself a
+        # faithfulness problem (a duplicated or decoy entry) and must
+        # not be trusted for its rank either way.
+        # Quote-matched alternation, like _STYLE_ATTR_RX elsewhere in this
+        # file - never r'code\s*:\s*[\'"]%s[\'"]', which accepts a
+        # MISMATCHED closing quote and would also match a single-quoted
+        # code: field that happens to be followed by an unrelated double
+        # quote later on the line. Both real examples write double
+        # quotes, but nothing about being a faithful dashboard requires
+        # that specific style, so a single-quoted code: field must still
+        # count as this code's one true owner, not zero.
+        esc = re.escape(code)
+        code_rx = re.compile(r'code\s*:\s*(?:"%s"|\'%s\')' % (esc, esc))
+        owners = [e for e in entries if code_rx.search(e)]
+        if not owners:
+            problems.append("%s is not recorded at rank %d" % (code, rank))
+        elif len(owners) > 1:
+            problems.append(
+                "%s has its own code: field in %d MAP entries "
+                "(expected exactly 1); its rank cannot be trusted"
+                % (code, len(owners)))
+        elif not re.search(r"rank\W+%d\b" % rank, owners[0]):
+            problems.append("%s is not recorded at rank %d" % (code, rank))
+    if exp["banner"] and exp["banner"] not in ctx.html:
+        problems.append("binding-constraint text absent verbatim: %r"
+                        % exp["banner"][:60])
+    if problems:
+        return Result(17, name, rule, FAIL, problems[:10])
+    return Result(17, name, rule, PASS)
+
+
+# --------------------------------------------------------------------------
 # self-test
 # --------------------------------------------------------------------------
 
@@ -2568,6 +2850,12 @@ INJECTIONS.update({
          {15}),
 })
 
+INJECTIONS.update({
+    17: ("expected asset code removed from MAP",
+         lambda html: html.replace('"AAA-1"', '"ZZZ-9"'),
+         {17}),
+})
+
 
 def run_checks(ctx):
     return [fn(ctx) for _, _, _, fn in CHECKS]
@@ -2577,7 +2865,11 @@ _SEVERITY = {PASS: 0, SKIP: 0, WARN: 1, FAIL: 2}
 
 
 def _statuses(html):
-    return dict((r.num, r.status) for r in run_checks(Ctx(html, "<self-test>")))
+    # expect="selftest" is required so check 17 (gated on --expect) is
+    # actually exercised by the self-test harness instead of permanently
+    # SKIPping - see EXPECTATIONS['selftest'] and the c17 docstring.
+    return dict((r.num, r.status)
+                for r in run_checks(Ctx(html, "<self-test>", expect="selftest")))
 
 
 def _tripped(html, baseline=None):
@@ -2605,7 +2897,7 @@ def self_test():
     print("verify.py --self-test")
     print("")
     ok = True
-    base_results = run_checks(Ctx(FIXTURE, "<self-test>"))
+    base_results = run_checks(Ctx(FIXTURE, "<self-test>", expect="selftest"))
     base_fail = [r for r in base_results if r.status == FAIL]
     base_warn = [r for r in base_results if r.status == WARN]
     if base_fail:
