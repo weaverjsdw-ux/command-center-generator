@@ -2558,6 +2558,70 @@ def _skip_map_noncode(text, i):
     return None
 
 
+def _redact_map_text(text):
+    """text with every opaque span - a quoted string, a '//' or '/* */'
+    comment, or a regex literal _map_regex_may_open+_js_regex_span_end
+    accept - replaced by _blank_run: same length, same newline offsets,
+    every other character (spaces included) blanked. _mask_non_markup
+    uses the identical _blank_run for the identical reason, applied to
+    a different pair of region kinds.
+
+    WHY THIS EXISTS: _skip_map_noncode decides brace STRUCTURE only -
+    it tells _map_body and _map_entries where an opaque span starts and
+    ends so its braces are never miscounted, but it does not touch the
+    span's own TEXT. Any code that pattern-matches against raw body or
+    entry text - c17's code_rx, its `code not in body` presence check,
+    and its rank-pattern search - was scanning that unredacted text
+    directly, so a `code:"X"`-shaped decoy sitting inside a string, a
+    comment, or an accepted regex literal was read exactly like real
+    code. Confirmed as a genuine, exploitable false PASS: renaming the
+    real `code:"INF-1"` field to `"YYY-1"` (so INF-1's true ownership is
+    gone) and then adding, INSIDE THAT SAME ENTRY, any of
+    `decoy: /code:"INF-1" rank:2/,` (an accepted-position regex),
+    `/* code:"INF-1" rank:2 */` (a comment), or
+    `note: "code:'INF-1' rank:2"` (a single-quoted string - the
+    double-quoted form does NOT reproduce it, because code_rx needs a
+    literal '"' immediately after `code:` and an escaped '\\"' does not
+    match) each independently made check 17 PASS a dashboard whose real
+    INF-1 entry no longer owns a code: field. Every prior break-it round
+    missed this because every prior decoy lived in its OWN object,
+    which the exactly-one-owner rule already catches (two owners, not
+    zero); a decoy hiding as plain TEXT inside the real, still-singular
+    entry was never tried until an independent review's own
+    reconstruction found it.
+
+    Redacting before matching closes all three shapes in one move,
+    because none of them survives having their own delimiters and
+    contents blanked: the string's quotes and characters, the comment's
+    markers and characters, and the regex literal's slashes and
+    characters are all just spaces afterward, so nothing inside any of
+    them can match code_rx or a rank pattern - or, in the mirror
+    direction, spuriously manufacture a SECOND owner out of a
+    legitimate regex whose text happens to contain another code's name
+    (e.g. a real `re: /code:"ZZZ-9"/` field), which would otherwise
+    false-FAIL a faithful dashboard.
+
+    Offsets and line numbers computed against redacted text remain
+    valid against the original document, because redaction is strictly
+    length- and newline-preserving - the same property _mask_non_markup
+    already relies on elsewhere in this file."""
+    pieces = []
+    kept = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        skip = _skip_map_noncode(text, i)
+        if skip is not None:
+            pieces.append(text[kept:i])
+            pieces.append(_blank_run(text[i:skip]))
+            kept = skip
+            i = skip
+            continue
+        i += 1
+    pieces.append(text[kept:])
+    return "".join(pieces)
+
+
 def _map_body(html):
     """(body, None) with the MAP object literal's full text (outer
     braces included), or (None, reason) if it cannot be safely located -
@@ -2807,6 +2871,30 @@ def c17(ctx):
     unrelated field) can otherwise vouch for a wrong real entry's rank;
     see _map_entries and this task's break-it notes.
 
+    A decoy does not need its own object to fool a naive version of this
+    check, either - _skip_map_noncode decides brace STRUCTURE, not text
+    content, so a `code:"X"`/`rank:N`-shaped decoy sitting INSIDE an
+    opaque span (a string value, a comment, or an accepted regex
+    literal) - even inside the SAME, otherwise-singular entry whose real
+    code: field has been renamed away - reached code_rx and the rank
+    search completely unfiltered under an earlier version of this
+    function. Confirmed independently on examples/demo_dashboard.html:
+    renaming the real `code:"INF-1"` to `"YYY-1"` and adding, inside
+    that same entry, any of `decoy: /code:"INF-1" rank:2/,` (a
+    whitelisted-position regex literal), `/* code:"INF-1" rank:2 */` (a
+    comment), or `note: "code:'INF-1' rank:2"` (a single-quoted string -
+    the double-quoted form does not reproduce it, since code_rx needs a
+    literal '"' right after `code:` and an escaped '\"' does not match)
+    each independently made this check PASS a dashboard whose real
+    INF-1 entry no longer owned a code: field. Closed by redacting every
+    opaque span (_redact_map_text, reusing _blank_run the same way
+    _mask_non_markup already does) and validating ownership against
+    that redacted text rather than raw text - see the code inline below
+    for exactly which check reads redacted text and which reads raw,
+    and why: it is not uniform, because a genuine code: field's own
+    VALUE is itself a string, and blanking every string indiscriminately
+    would erase real data along with decoy data.
+
     Codes/ranks invariant: exp["ranks"] is what the loop below actually
     checks per code, so a fixture listing a code in "codes" without a
     matching entry in "ranks" would let that ONE code's own removal from
@@ -2859,11 +2947,49 @@ def c17(ctx):
     body, reason = _map_body(ctx.html)
     if body is None:
         return Result(17, name, rule, FAIL, [reason])
+    # redacted is body with every string, comment and accepted-regex
+    # span blanked via _redact_map_text (_blank_run under the hood, so
+    # length- and newline-preserving - no offset needs its own math to
+    # stay correct against it). NOT every check below reads it, and the
+    # split is deliberate - each is explained at its own use below:
+    #
+    #   - coarse presence test: RAW (unchanged). A code's only
+    #     legitimate appearances are inside quoted strings (its own
+    #     code: field, or another field mentioning it), so redacting
+    #     blanks the very thing this check is looking for - proven, not
+    #     assumed: EXPECTATIONS['selftest'] against FIXTURE went from a
+    #     clean PASS to reporting "AAA-1 absent from MAP" the moment
+    #     this check was pointed at redacted text, because the ONLY
+    #     "AAA-1" in the whole document is inside its own `code:
+    #     "AAA-1"` field. This check's known weakness (a bare prose
+    #     mention elsewhere in MAP can satisfy it) is unchanged from
+    #     round 2 and still accepted - the code_rx ownership check below
+    #     is what actually enforces faithfulness.
+    #   - code_rx ownership: matched against RAW entry text (unchanged
+    #     pattern - still needs the real quoted value, which redaction
+    #     would also blank), then EACH match is validated against the
+    #     REDACTED entry at the SAME offset: the match only counts if
+    #     the literal word "code" survived redaction unblanked there.
+    #     This is the exact, minimal discriminator between a genuine
+    #     field (`code:"AAA-1"` - "code" is live object-literal syntax,
+    #     only the VALUE is a string) and all three confirmed decoy
+    #     shapes (a regex literal, a comment, a single-quoted string)
+    #     where the WHOLE match, "code" keyword included, sits inside
+    #     one opaque span and is therefore blanked start to finish.
+    #   - rank-pattern search: REDACTED. Rank values in this schema are
+    #     bare numbers (`rank:4`, never quoted), so redaction never
+    #     touches a genuine one - and a decoy `rank:2` hidden inside the
+    #     SAME opaque span that hid a decoy `code:` is blanked away with
+    #     it, closing that half of the exploit with no separate logic.
+    #   - banner: RAW ctx.html, covered on its own further down.
+    redacted = _redact_map_text(body)
     problems = []
     for code in exp["codes"]:
         if code not in body:
             problems.append("asset code %s absent from MAP" % code)
-    entries = [body[s:e] for s, e in _map_entries(body)]
+    spans = _map_entries(body)
+    raw_entries = [body[s:e] for s, e in spans]
+    redacted_entries = [redacted[s:e] for s, e in spans]
     for code, rank in exp["ranks"].items():
         # A code must own its own `code:"X"` field in EXACTLY one entry -
         # not merely appear as a substring somewhere inside a chunk that
@@ -2891,16 +3017,30 @@ def c17(ctx):
         # count as this code's one true owner, not zero.
         esc = re.escape(code)
         code_rx = re.compile(r'code\s*:\s*(?:"%s"|\'%s\')' % (esc, esc))
-        owners = [e for e in entries if code_rx.search(e)]
-        if not owners:
+        owner_idx = []
+        for idx, raw_e in enumerate(raw_entries):
+            red_e = redacted_entries[idx]
+            for m in code_rx.finditer(raw_e):
+                if red_e[m.start():m.start() + 4] == "code":
+                    owner_idx.append(idx)
+                    break
+        if not owner_idx:
             problems.append("%s is not recorded at rank %d" % (code, rank))
-        elif len(owners) > 1:
+        elif len(owner_idx) > 1:
             problems.append(
                 "%s has its own code: field in %d MAP entries "
                 "(expected exactly 1); its rank cannot be trusted"
-                % (code, len(owners)))
-        elif not re.search(r"rank\W+%d\b" % rank, owners[0]):
+                % (code, len(owner_idx)))
+        elif not re.search(r"rank\W+%d\b" % rank, redacted_entries[owner_idx[0]]):
             problems.append("%s is not recorded at rank %d" % (code, rank))
+    # Deliberately checked against ctx.html RAW - never body, never
+    # redacted. The banner is not code check 17 needs to disbelieve; it
+    # is itself a genuine string VALUE inside MAP (honesty.verbatim in
+    # both shipped examples), and redaction would blank exactly the
+    # string content this check exists to find. Redacting it would turn
+    # "the banner text is missing" into "the banner text is missing
+    # because this function erased it," which is not a check on the
+    # dashboard at all.
     if exp["banner"] and exp["banner"] not in ctx.html:
         problems.append("binding-constraint text absent verbatim: %r"
                         % exp["banner"][:60])
