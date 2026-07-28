@@ -7,6 +7,7 @@ and section 6.6. Standard library only. No third-party imports. See --help.
 import argparse
 import re
 import sys
+from urllib.parse import urlparse
 
 PASS, FAIL, WARN, SKIP = "PASS", "FAIL", "WARN", "SKIP"
 
@@ -97,14 +98,27 @@ def c01(ctx):
         ctx.find(r"""<script[^>]*type\s*=\s*['"]module['"]""", re.I))
 
 
+def _script_body_lines(ctx):
+    """Yield (lineno, text) for every physical line inside a <script>...
+    </script> body, using real document line numbers. Scanning is scoped
+    to script content only so ordinary page markup (e.g. an "Export Data"
+    button label) can never be mistaken for an ES import/export statement.
+    """
+    for m in re.finditer(r"<script\b[^>]*>(.*?)</script\s*>", ctx.html,
+                         re.S | re.I):
+        start_line = ctx.html.count("\n", 0, m.start(1)) + 1
+        for j, body_ln in enumerate(m.group(1).split("\n")):
+            yield start_line + j, body_ln
+
+
 @check(2, "no ES import/export statements", "section 7")
 def c02(ctx):
     name = "no ES import/export statements"
     rule = "section 7"
     hits = []
-    for i, ln in enumerate(ctx.lines):
-        if re.search(r"^\s*(?:import|export)\s+", ln) and "<script" not in ln:
-            hits.append((i + 1, ln))
+    for lineno, ln in _script_body_lines(ctx):
+        if re.search(r"^\s*(?:import|export)\s+", ln):
+            hits.append((lineno, ln))
     return fail_on_hits(2, name, rule, hits)
 
 
@@ -142,16 +156,36 @@ def c06(ctx):
 
 FONT_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com")
 
+# Matches one whole opening tag at a time so a src=/href= match can be
+# attributed to the specific tag it lives in, not merely "somewhere on
+# this line" - a line may legitimately mix an <a href> with a <link href>
+# or a <script src>, and each needs its own navigation-vs-resource verdict.
+_TAG_RX = re.compile(r"<([a-zA-Z][\w-]*)\b[^>]*>")
+
+
+def _is_font_host(url):
+    """True only if url's actual host is a known fonts CDN host - not
+    merely a URL that contains the host name as a substring somewhere
+    (e.g. in a query string), which would defeat the whole check."""
+    host = (urlparse(url).hostname or "").lower()
+    return host in FONT_HOSTS
+
 
 def _external_refs(ctx):
-    """Return [(lineno, url, is_link_tag)] for every http(s) resource ref."""
+    """Return [(lineno, url, is_link_tag)] for every http(s) resource ref.
+    Scoped per-tag: an <a href> on the same line as a <link>/<script>/<img>
+    no longer hides or absorbs the other's reference."""
     out = []
+    attr_rx = re.compile(r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""",
+                         re.I)
     for i, ln in enumerate(ctx.lines):
-        for m in re.finditer(r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""",
-                             ln, re.I):
-            if re.search(r"<a\b[^>]*href", ln, re.I) and "<link" not in ln.lower():
+        for tag_m in _TAG_RX.finditer(ln):
+            tag_name = tag_m.group(1).lower()
+            if tag_name == "a":
                 continue  # anchors are navigation, not resource loads
-            out.append((i + 1, m.group(1), "<link" in ln.lower()))
+            attr_m = attr_rx.search(tag_m.group(0))
+            if attr_m:
+                out.append((i + 1, attr_m.group(1), tag_name == "link"))
         for m in re.finditer(r"url\(\s*['\"]?(https?://[^'\")]+)", ln, re.I):
             out.append((i + 1, m.group(1), False))
     return out
@@ -159,7 +193,7 @@ def _external_refs(ctx):
 
 def _fonts_links(ctx):
     return [(n, u, is_link) for n, u, is_link in _external_refs(ctx)
-            if is_link and any(h in u for h in FONT_HOSTS)]
+            if is_link and _is_font_host(u)]
 
 
 @check(7, "at most one external ref, and it must be a fonts stylesheet",
@@ -171,7 +205,7 @@ def c07(ctx):
     fonts = _fonts_links(ctx)
     problems = []
     for n, url, _ in refs:
-        if not any(h in url for h in FONT_HOSTS):
+        if not _is_font_host(url):
             problems.append("line %d: external resource %s" % (n, url[:100]))
     if len(fonts) > 1:
         problems.append("%d fonts stylesheets; section 7 sanctions one" % len(fonts))
@@ -180,16 +214,28 @@ def c07(ctx):
     return Result(7, name, rule, PASS)
 
 
+def _local_ref_tag(ln):
+    """True if some non-anchor tag on this line carries a local src=/href=,
+    checked per-tag (not per-line) so an <a href> sharing a line with a
+    real local <link>/<script>/<img> can't hide or falsely absorb it."""
+    local_attr_rx = re.compile(
+        r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""")
+    for tag_m in _TAG_RX.finditer(ln):
+        tag_name = tag_m.group(1).lower()
+        if tag_name == "a":
+            continue  # anchors are navigation, not resource loads
+        if local_attr_rx.search(tag_m.group(0)):
+            return True
+    return False
+
+
 @check(8, "no local file references", "section 7 zero external local files")
 def c08(ctx):
     name = "no local file references"
     rule = "section 7 zero external local files"
     hits = []
     for i, ln in enumerate(ctx.lines):
-        low = ln.lower()
-        if re.search(r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""", ln):
-            if re.search(r"<a\b", low) and "<link" not in low:
-                continue
+        if _local_ref_tag(ln):
             hits.append((i + 1, ln))
         elif re.search(r"url\(\s*['\"]?(?!data:|https?:|#)[^)'\"]+\.[a-z0-9]{2,5}",
                        ln, re.I):
