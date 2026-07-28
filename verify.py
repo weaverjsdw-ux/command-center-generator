@@ -582,6 +582,238 @@ def c09(ctx):
     return Result(9, name, rule, PASS)
 
 
+# --------------------------------------------------------------------------
+# checks 10-11: section 8.2 (single source of truth for data) and
+# section 8.3 (single source of truth for style)
+# --------------------------------------------------------------------------
+
+NAMED_COLORS = (
+    "aqua black blue fuchsia gray green lime maroon navy olive purple red "
+    "silver teal white yellow orange crimson coral gold indigo ivory khaki "
+    "lavender magenta salmon tan tomato turquoise violet wheat").split()
+
+_MAP_ASSIGN_RX = re.compile(
+    r"\b(?:const|let|var)\s+MAP\s*=|\bwindow\.MAP\s*=")
+
+_SCRIPT_TAG_RX = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.S | re.I)
+
+
+def _offset_in_spans(offset, spans):
+    return any(s <= offset < e for s, e in spans)
+
+
+def _script_bodies(ctx):
+    """[(start, end, region_kind)] for every <script>...</script> BODY
+    found by a raw scan of ctx.html - deliberately unmasked, because a
+    <script> tag can be found nested inside another live script's own
+    text (a JS string or template literal constructing markup, the
+    document.write() pattern checks 1/6/9 already treat as real) and
+    that nesting is exactly what this function needs to see.
+
+    region_kind is None when the tag's own opening '<script' sits in
+    live markup - a genuinely live, executing script. Otherwise it is
+    the masked-region kind ("script", "style" or "comment") that the
+    tag's start offset falls in, from Ctx.region_kind_at: "script" for
+    a tag built inside another script's JS string/template literal,
+    "comment" for one sitting inside an HTML comment. Same idea as
+    _masked_region_tags, at body-span granularity instead of per-tag.
+
+    Caveat this function cannot resolve on its own: the body/close-tag
+    pairing (like _mask_non_markup's own pairing) takes the FIRST
+    </script> after an opening tag, so a <script>...</script>-shaped
+    string sitting INSIDE an otherwise-live script body gets silently
+    absorbed into that live body rather than split out as its own
+    nested entry - the two are textually overlapping, not nested in any
+    way a single open/close pairing can represent. c10 does not lean on
+    region_kind alone for that case; see _looks_commented_or_quoted."""
+    out = []
+    for m in _SCRIPT_TAG_RX.finditer(ctx.html):
+        out.append((m.start(1), m.end(1), ctx.region_kind_at(m.start())))
+    return out
+
+
+def _line_text_before(ctx, offset):
+    """The text of offset's own physical line, from the line's start up
+    to (not including) offset itself."""
+    line_start = ctx.html.rfind("\n", 0, offset) + 1
+    return ctx.html[line_start:offset]
+
+
+def _looks_commented_or_quoted(before):
+    """True if a match preceded on its own source line by this text is
+    plausibly sitting inside a JS '//' line comment or a same-line
+    quoted string/template literal.
+
+    A same-line, quote-counting heuristic, not a JS parser - and
+    deliberately scoped to a single line: checking only the text before
+    the match on ITS OWN line means a wrong call affects just that one
+    match's grading (WARN vs live), never blanks or swallows unrelated
+    code elsewhere in the document the way a whole-document JS
+    comment/string stripper could (a stray quote inside a regex literal,
+    e.g. /['"]/text, would make a global stripper pair across everything
+    that follows - this function cannot make that mistake because it
+    never looks past the start of the current line)."""
+    if "//" in before:
+        return True
+    return any(before.count(q) % 2 == 1 for q in ('"', "'", "`"))
+
+
+@check(10, "exactly one MAP object assignment", "section 8.2")
+def c10(ctx):
+    name = "exactly one MAP object assignment"
+    rule = "section 8.2"
+    bodies = _script_bodies(ctx)
+    live_hits = []
+    soft = []
+
+    def soft_note(lineno, label):
+        soft.append("line %d: MAP assignment-like text (inside %s - %s)"
+                    % (lineno, label, _ADJUDICATE))
+
+    for start, end, kind in bodies:
+        for m in _MAP_ASSIGN_RX.finditer(ctx.html[start:end]):
+            abs_off = start + m.start()
+            lineno = ctx.lineno_at(abs_off)
+            if kind is not None:
+                soft_note(lineno, _REGION_LABEL[kind])
+            elif _looks_commented_or_quoted(_line_text_before(ctx, abs_off)):
+                soft_note(lineno, "a JS comment or string")
+            else:
+                live_hits.append((lineno, m.group(0)))
+    # a bare "MAP =" mention sitting directly inside an HTML comment,
+    # with no enclosing <script> tag at all
+    body_spans = [(s, e) for s, e, _ in bodies]
+    for m in _MAP_ASSIGN_RX.finditer(ctx.html):
+        if ctx.region_kind_at(m.start()) != "comment":
+            continue
+        if _offset_in_spans(m.start(), body_spans):
+            continue
+        soft_note(ctx.lineno_at(m.start()), _REGION_LABEL["comment"])
+    soft = _cap(soft)
+    if len(live_hits) == 1:
+        return Result(10, name, rule, WARN, soft) if soft \
+            else Result(10, name, rule, PASS)
+    if not live_hits:
+        return Result(10, name, rule, FAIL,
+                      ["no MAP object assignment found"] + soft)
+    return Result(10, name, rule, FAIL,
+                  ["%d MAP assignments; section 8.2 requires exactly one"
+                   % len(live_hits)] + line_details(live_hits) + soft)
+
+
+_STYLE_TAG_RX = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.S | re.I)
+_ROOT_BLOCK_RX = re.compile(r":root\s*\{.*?\}", re.S)
+_CSS_COMMENT_RX = re.compile(r"/\*.*?\*/", re.S)
+_CSS_DECL_RX = re.compile(r"([a-zA-Z-]+)\s*:\s*([^;{}]*)")
+
+
+def _has_color_literal(text):
+    return bool(re.search(r"#[0-9a-fA-F]{3,8}\b", text)
+                or re.search(r"\b(?:rgba?|hsla?)\s*\(", text)
+                or any(re.search(r"\b%s\b" % c, text) for c in NAMED_COLORS))
+
+
+def _style_bodies(ctx):
+    """[(start, end, region_kind)] for every <style>...</style> BODY,
+    same shape and same reasoning as _script_bodies above: region_kind
+    is None for a genuinely live stylesheet, else the masked-region kind
+    the tag's own start offset falls in."""
+    out = []
+    for m in _STYLE_TAG_RX.finditer(ctx.html):
+        out.append((m.start(1), m.end(1), ctx.region_kind_at(m.start())))
+    return out
+
+
+def _non_root_declarations(ctx):
+    """(lineno, property, value) for every CSS declaration outside a
+    :root block, in every genuinely live <style> body.
+
+    Offset-based throughout: line numbers come from Ctx.lineno_at
+    against the declaration's own match offset, never from a fuzzy
+    per-line substring search - so an empty or unusual value (color:;)
+    can never crash the lookup, by construction rather than by guard.
+    Declarations that exist only inside a CSS comment, or only inside a
+    non-live <style> body (nested in a JS string or an HTML comment),
+    are excluded here; check 11 reports those separately, at WARN."""
+    bodies = _style_bodies(ctx)
+    nested = [(s, e) for s, e, kind in bodies if kind is not None]
+    out = []
+    for start, end, kind in bodies:
+        if kind is not None:
+            continue
+        body = ctx.html[start:end]
+        masked = _ROOT_BLOCK_RX.sub(lambda m: _blank_run(m.group(0)), body)
+        masked = _CSS_COMMENT_RX.sub(lambda m: _blank_run(m.group(0)), masked)
+        for m in _CSS_DECL_RX.finditer(masked):
+            abs_off = start + m.start()
+            if _offset_in_spans(abs_off, nested):
+                continue
+            prop, value = m.group(1).strip(), m.group(2).strip()
+            out.append((ctx.lineno_at(abs_off), prop, value))
+    return out
+
+
+def _soft_color_literals(ctx):
+    """[(note)] strings for color-literal-shaped text that is not a live
+    style rule: inside a CSS comment in a live <style> body, inside a
+    <style> body that only exists in a masked region (a JS string,
+    nested inside another <style>/<script> body, or an HTML comment), or
+    sitting directly inside an HTML comment with no enclosing <style>
+    body at all. Check 11 reports these at WARN with the adjudication
+    note, rather than FAIL - same reasoning as checks 7-9's soft bucket."""
+    bodies = _style_bodies(ctx)
+    seen = set()
+    out = []
+
+    def add(lineno, snippet, label):
+        if lineno in seen:
+            return
+        seen.add(lineno)
+        out.append("line %d: %s (inside %s - %s)"
+                    % (lineno, snippet[:80], label, _ADJUDICATE))
+
+    for start, end, kind in bodies:
+        body = ctx.html[start:end]
+        if kind is not None:
+            for m in _CSS_DECL_RX.finditer(body):
+                value = m.group(2).strip()
+                if _has_color_literal(value):
+                    add(ctx.lineno_at(start + m.start()),
+                        "%s: %s" % (m.group(1).strip(), value),
+                        _REGION_LABEL[kind])
+            continue
+        for cm in _CSS_COMMENT_RX.finditer(body):
+            if _has_color_literal(cm.group(0)):
+                add(ctx.lineno_at(start + cm.start()),
+                    cm.group(0).strip(), "a CSS comment")
+    body_spans = [(s, e) for s, e, _ in bodies]
+    for m in re.finditer(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\s*\(",
+                         ctx.html):
+        if ctx.region_kind_at(m.start()) != "comment":
+            continue
+        if _offset_in_spans(m.start(), body_spans):
+            continue
+        lineno = ctx.lineno_at(m.start())
+        add(lineno, ctx.lines[lineno - 1].strip(), _REGION_LABEL["comment"])
+    return _cap(out)
+
+
+@check(11, "no hardcoded colors outside :root", "section 8.3")
+def c11(ctx):
+    name = "no hardcoded colors outside :root"
+    rule = "section 8.3"
+    problems = []
+    for lineno, prop, value in _non_root_declarations(ctx):
+        if _has_color_literal(value):
+            problems.append("line %d: %s: %s" % (lineno, prop, value[:80]))
+    soft = _soft_color_literals(ctx)
+    if problems:
+        return Result(11, name, rule, FAIL, problems[:10] + soft)
+    if soft:
+        return Result(11, name, rule, WARN, soft)
+    return Result(11, name, rule, PASS)
+
+
 @check(16, "output hygiene: DOCTYPE first, </html> last, no prose", "section 8.10")
 def c16(ctx):
     problems = []
@@ -690,6 +922,15 @@ INJECTIONS.update({
     9: ("img src that is not a data: URI",
         _inject_before("</body>", '<img src="#" alt="x">\n'),
         {9}),
+})
+
+INJECTIONS.update({
+    10: ("second MAP object assignment",
+         _inject_before("function render()", "var MAP = { assets: [] };\n"),
+         {10}),
+    11: ("hardcoded hex color outside :root",
+         _inject_before("</style>", "h1{ color:#ff0000; }\n"),
+         {11}),
 })
 
 
