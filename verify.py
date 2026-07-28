@@ -1563,12 +1563,32 @@ _ATTR_PARSE_RX = re.compile(
 def _tag_is_quoted_marked(tag_text):
     """True if tag_text - one WHOLE opening tag, already matched via the
     quote-aware _TAG_RX/_ATTR_RUN shape - genuinely carries the
-    quoted-region marking: a class attribute whose value contains
+    quoted-region marking: the WINNING class attribute's value contains
     "quoted" as one of its whitespace-delimited TOKENS (not merely as a
-    substring - "quoted-tag" and "unquoted" must not count), or an
-    attribute literally NAMED data-quoted (its value, if any, is
-    irrelevant - a bare boolean-style data-quoted with no '=' still
-    counts).
+    substring - "quoted-tag" and "unquoted" must not count), or a
+    WINNING attribute literally NAMED data-quoted exists (its value, if
+    any, is irrelevant - a bare boolean-style data-quoted with no '='
+    still counts).
+
+    "Winning" matters because HTML5 duplicate-attribute parsing keeps
+    only the FIRST occurrence of a given attribute name; every later
+    occurrence of that same name is a parse-time no-op a real browser
+    never applies. `<div class="foo" class="quoted">` renders with
+    class="foo" - the second, "quoted"-carrying occurrence is dead text
+    as far as any browser is concerned. An earlier revision of this
+    function tested EVERY class/data-quoted occurrence it found via
+    _ATTR_PARSE_RX.finditer and returned True on the first one that
+    happened to carry the token, regardless of position - so
+    `class="foo" class="quoted">Buy now` was wrongly treated as quoted
+    and _strip_quoted blanked the whole element, silently dropping the
+    CTA verb. The fix: collapse the tag's attributes to a first-occurrence
+    map first (skipping every later duplicate of an already-seen name),
+    then test only the winning class/data-quoted from that map - never
+    a later occurrence, however it reads.
+
+    Attribute NAMES are case-insensitive in HTML (CLASS="quoted" and
+    DATA-QUOTED both count), handled by lower-casing the name before it
+    is used as the map key.
 
     This replaces an earlier, defective detector that scanned raw tag
     text with `[^>]*` for the SUBSTRING "class=...quoted..." or
@@ -1584,18 +1604,22 @@ def _tag_is_quoted_marked(tag_text):
     those substrings is correctly seen as just a value, never mistaken
     for markup, by iterating actual name/value pairs instead of
     substring-matching the raw tag text."""
+    winners = {}
     for m in _ATTR_PARSE_RX.finditer(tag_text):
         name = m.group(1).lower()
-        if name == "data-quoted":
-            return True
-        if name == "class":
-            value = m.group(2)
-            if value is None:
-                value = m.group(3)
-            if value is None:
-                value = m.group(4)
-            if value and "quoted" in value.lower().split():
-                return True
+        if name in winners:
+            continue  # HTML5: first occurrence wins; later ones are no-ops
+        value = m.group(2)
+        if value is None:
+            value = m.group(3)
+        if value is None:
+            value = m.group(4)
+        winners[name] = value
+    if "data-quoted" in winners:
+        return True
+    class_value = winners.get("class")
+    if class_value and "quoted" in class_value.lower().split():
+        return True
     return False
 
 
