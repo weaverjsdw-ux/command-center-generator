@@ -2483,6 +2483,80 @@ _MAP_AMBIGUOUS_SLASH_FAIL = (
     'MAP body contains a "/" this checker cannot classify (regex '
     "literal or division); data faithfulness cannot be verified safely")
 
+# Punctuation after which JS grammar makes a division operator
+# IMPOSSIBLE, so a '/' immediately following (ignoring whitespace) can
+# only open a regex literal - no judgement call, just a hard grammar
+# fact. '[' and ',' are what MAP's own real data needs
+# (`forbiddenScan:[/finding/i,/recommendation/i,/causal/i]` - a '['
+# opening the array, then ',' between each element); the rest round the
+# same set out to cover ordinary object-literal shapes without reaching
+# for anything a division operator could also follow.
+_MAP_REGEX_PRECEDING_PUNCT = frozenset("[,:(=!&|?{;")
+
+
+def _map_regex_may_open(html, slash_index):
+    """True if html[slash_index] (a '/') is immediately preceded, other
+    than by whitespace, by a token after which a regex literal is the
+    ONLY grammatically legal parse - _MAP_REGEX_PRECEDING_PUNCT, or a
+    whole word in _JS_REGEX_KEYWORDS (the same "return-class keyword"
+    set _js_regex_may_start already uses elsewhere in this file, reused
+    here rather than redefined). False for anything else - an
+    identifier that ISN'T one of those keywords, a number, a closing
+    ')'/']'/'}', or a closed string - because after any of those a '/'
+    could equally be division, and this function's whole purpose is to
+    answer only where there is no equally-legal alternative reading.
+
+    This is NOT a step toward general regex-vs-division disambiguation.
+    It is deliberately narrower: a strict subset of positions where the
+    answer is a grammar fact, not a guess. Everywhere else, _map_body
+    refuses to parse at all rather than picking one interpretation - see
+    its own docstring for why (Task 4's _scan_js_states already spent
+    five review rounds attempting the general version and the outcome
+    was to strip that lexer of all verdict authority, not keep
+    refining it)."""
+    j = slash_index - 1
+    while j >= 0 and html[j] in " \t\n\r":
+        j -= 1
+    if j < 0:
+        return False
+    c = html[j]
+    if c in _MAP_REGEX_PRECEDING_PUNCT:
+        return True
+    if c.isalnum() or c in "_$":
+        k = j
+        while k >= 0 and (html[k].isalnum() or html[k] in "_$"):
+            k -= 1
+        word = html[k + 1:j + 1]
+        after_dot = k >= 0 and html[k] == "."
+        return not after_dot and word in _JS_REGEX_KEYWORDS
+    return False
+
+
+def _skip_map_noncode(text, i):
+    """_skip_noncode, extended to also consume a regex literal accepted
+    by _map_regex_may_open + _js_regex_span_end together - the same
+    narrow, bounded acceptance rule described in _map_body's docstring.
+
+    Shared by _map_body AND _map_entries, not just the former: a regex
+    literal _map_body accepts is still literally present, character for
+    character, in the body text _map_body returns (deciding where to
+    STOP does not rewrite what came before). _map_entries re-scans that
+    same returned text to find entry boundaries, using its own
+    independent brace-depth count - if it used plain _skip_noncode
+    instead of this function, it would hit the accepted regex's own
+    characters (e.g. the escaped '}' inside `closer: /\\}/`) with no
+    idea they were already spoken for, and miscount a real brace out of
+    text _map_body had already correctly treated as opaque. Using the
+    SAME skip function in both places keeps that agreement exact."""
+    skip = _skip_noncode(text, i)
+    if skip is not None:
+        return skip
+    if text[i] == "/" and _map_regex_may_open(text, i):
+        end = _js_regex_span_end(text, i)
+        if end != -1:
+            return end
+    return None
+
 
 def _map_body(html):
     """(body, None) with the MAP object literal's full text (outer
@@ -2526,90 +2600,90 @@ def _map_body(html):
     zero on it).
 
     A JS regex literal is a THIRD way a brace can be miscounted, and it
-    is not handled the same way strings and comments are - it is
-    refused outright, never disambiguated. A bare '/' anywhere in code
-    position - one _skip_noncode does not recognise as opening a '//' or
-    '/*' comment, so by elimination it is either a regex literal or a
-    division operator - aborts extraction immediately with
-    _MAP_AMBIGUOUS_SLASH_FAIL, rather than letting the scan continue
-    past it and treat whatever braces happen to sit inside the regex as
-    real structure. Deliberately NOT disambiguated: this file's own
-    _scan_js_states already tried to solve regex-vs-division properly,
-    for check 10, and c10's own docstring records five separate review
-    rounds where a disambiguation bug in that lexer turned a real
-    violation into a false PASS - the eventual fix there was to strip
-    the lexer of all verdict authority, not to keep refining it. This
-    function does not reopen that: MAP is a generated DATA literal -
-    codes, names, ranks, strings, arrays - so a '/' in code position is
-    not the ORDINARY shape that data takes, and refusing it outright
-    removes the whole over-capture failure class by construction rather
-    than by another disambiguation attempt. A '/' inside a quoted string
-    (a URL, a file path) never reaches this check at all - _skip_noncode
-    consumes the whole string, unexamined, before any of its own
-    characters are ever inspected here - so the common case (string data
-    containing a slash) is unaffected; only a bare, code-position '/'
-    triggers it.
+    is genuinely present in shipped output: examples/research_dashboard
+    .html's own MAP literal contains
+    `forbiddenScan:[/finding/i,/recommendation/i,/causal/i]` at depth 2,
+    genuinely inside MAP's own object - the dashboard's own mechanism
+    for scanning its rendered banner text against its honesty
+    constraint's NEVER-clause (the source comment right above it says
+    so: "/* forbidden-claims token set, parsed from the NEVER-clause of
+    THIS map */"). So a regex literal inside MAP is not hypothetical or
+    hostile-only; it is real, generator-produced content that this
+    function must be able to read.
 
-    This is NOT cost-free on real output, and that was checked rather
-    than assumed: examples/research_dashboard.html's own MAP literal
-    contains `forbiddenScan:[/finding/i,/recommendation/i,/causal/i]`
-    (verified at depth 2, genuinely inside MAP's own object, not past
-    a premature close) - three real, live regex literals the dashboard
-    uses to scan its OWN rendered banner text for violations of its
-    honesty constraint's NEVER-clause; the source line right above it
-    even says so: "/* forbidden-claims token set, parsed from the
-    NEVER-clause of THIS map */". That field is not hostile and not an
-    injection artifact - it is the research dashboard's own mechanism
-    for enforcing the exact banner text check 17 also verifies - but
-    this function cannot tell that apart from a hostile regex built to
-    mask an over-capture, and per the reasoning above it does not try
-    to. The result: check 17 now FAILs on a genuinely faithful,
-    unmodified examples/research_dashboard.html with
-    _MAP_AMBIGUOUS_SLASH_FAIL, where it previously PASSed. This is a
-    disclosed, accepted cost of refusing to guess, not an oversight -
-    see this task's break-it notes for the decision this forces
-    (EXPECTATIONS['research'] is now unreachable against its own
-    shipped example until either this rule or that dashboard changes).
-    examples/demo_dashboard.html's MAP contains no code-position '/' at
-    all and is unaffected.
+    It is still not handled the way strings and comments are - by fully
+    disambiguating regex-vs-division and trusting the answer everywhere.
+    This file's own _scan_js_states already tried that, for check 10,
+    and c10's own docstring records five separate review rounds where a
+    disambiguation bug in that lexer turned a real violation into a
+    false PASS - the eventual fix there was to strip the lexer of all
+    verdict authority, not keep refining it. This function does not
+    reopen that swamp. Instead it accepts a regex literal ONLY where
+    JS grammar makes division impossible, so no judgement is ever
+    involved - _map_regex_may_open checks whether the '/' is
+    immediately preceded (ignoring whitespace) by punctuation after
+    which a division operator cannot legally appear
+    (_MAP_REGEX_PRECEDING_PUNCT: '[', ',', ':', '(', '=', '!', '&', '|',
+    '?', '{', ';') or by a whole return-class keyword
+    (_JS_REGEX_KEYWORDS, the same set _js_regex_may_start already uses
+    elsewhere in this file). `forbiddenScan:[/finding/i,...]` is
+    satisfied entirely by this: the first '/' follows '[', the rest
+    follow ','.
 
-    This was not always the design. An earlier version of this function
-    left regex literals unhandled entirely, on the theory that neither
-    shipped example nor the self-test FIXTURE contains one and any real
-    generator emits data, not code, into MAP. That theory was tested,
-    not just asserted, and the untested half of it FAILED: an escaped
-    brace inside a regex literal (`re_field: /\\{/,`) inflates depth by
-    one exactly like the in-string case above, and - because the rest of
-    the enclosing <script> body is one balanced JS unit - the scan does
-    not fail to find a close; it over-captures the ENTIRE remainder of
-    the script, landing at the script's own last '}'. That over-captured
-    tail is text check 17 was never meant to search, and a constructed
-    attack proved the danger this docstring had previously only
-    described in the abstract: starting from a genuine copy of
-    examples/demo_dashboard.html, (1) INF-3's own `code:"INF-3"` field
-    was renamed to `code:"XXX-3"` - its real ownership genuinely gone,
-    only a bare prose mention of "INF-3" surviving elsewhere in MAP: (2)
-    a `re_field: /\\{/,` field was added to that same (now-renamed)
-    entry, inflating depth by one; (3) a `var DECOY = { code:"INF-3",
-    rank:4 };` statement was inserted just after MAP's own real closing
-    `};`, landing inside the resulting over-captured region purely
-    because the scan no longer stopped where it should have. Measured
-    directly: the over-captured body ballooned from a clean 12008
-    characters to 37754, the decoy was inside it, and c17 returned PASS
-    with zero problems - a genuinely unfaithful dashboard (INF-3's real
-    entry no longer owns a code: field) passing the exact check that
-    exists to catch that, because the decoy's own unrelated code:/rank:
-    pair satisfied the ownership check in the real entry's place. The
-    SAME three-part construction, re-run against the code-position '/'
-    refusal above, now FAILs with _MAP_AMBIGUOUS_SLASH_FAIL at the
-    regex field's own opening '/' - before the renamed field or the
-    decoy object are ever reached, because the scan never gets far
-    enough to see either one. See this task's break-it notes for the
-    full verification, including that a '/' inside a string value (a
-    URL, a path) still does not trigger this, and see the
-    forbiddenScan paragraph above for the one shipped example where a
-    genuinely faithful dashboard does NOT still PASS - refusing to
-    guess has a real, named cost as well as a real, named benefit."""
+    Accepting is still bounded hard, never open-ended: _js_regex_span_end
+    (already defined above, for _scan_js_states) looks for the closing,
+    unescaped '/' - honouring backslash escapes and '[...]' character
+    classes - and refuses to cross a physical newline, because a JS
+    regex literal cannot legally contain a raw one. If no closing '/' is
+    found on the same line, it is NOT accepted as a regex, whatever
+    preceded it - this function falls through to
+    _MAP_AMBIGUOUS_SLASH_FAIL exactly as it would for an unclassifiable
+    '/', rather than guessing that the absent close means something else
+    or scanning further to look for one. This one-line bound is what
+    makes a mis-parse impossible to run away with - it is precisely how
+    the failure this replaced worked: an escaped brace inside a regex
+    literal (`re_field: /\\{/,`) used to inflate brace depth by one, and
+    because the rest of the enclosing <script> body is one balanced JS
+    unit, the scan did not fail to find a close - it over-captured the
+    ENTIRE remainder of the script, landing at the script's own last
+    '}'. A constructed attack proved the danger: starting from a genuine
+    copy of examples/demo_dashboard.html, (1) INF-3's own
+    `code:"INF-3"` field was renamed to `code:"XXX-3"` - its real
+    ownership genuinely gone, only a bare prose mention of "INF-3"
+    surviving elsewhere in MAP; (2) a `re_field: /\\{/,` field was added
+    to that same (now-renamed) entry; (3) a `var DECOY = {
+    code:"INF-3", rank:4 };` statement was inserted just after MAP's
+    own real closing `};`, landing inside the resulting over-captured
+    region. Measured directly: the over-captured body ballooned from a
+    clean 12008 characters to 37754, the decoy was inside it, and c17
+    returned PASS with zero problems - a genuinely unfaithful dashboard
+    passing the exact check built to catch that, because the decoy's
+    own unrelated code:/rank: pair satisfied the ownership check in the
+    real entry's place.
+
+    Now, with regex-literal consumption whitelisted and bounded: the
+    SAME `re_field: /\\{/,` (its '/' follows ':', in the whitelist) is
+    consumed as a regex literal - its internal '\\{' is never separately
+    counted as a real brace, because it is part of the consumed regex
+    span, not inspected as code - so the scan correctly reaches MAP's
+    TRUE closing brace and the DECOY object (which sits AFTER that true
+    close) is correctly excluded from the returned body. The SAME
+    three-part attack, re-run against this version, FAILs again, but
+    for the RIGHT reason: the decoy is outside body and never seen, and
+    the renamed entry's own missing `code:"INF-3"` field is caught
+    directly. A '/' inside a quoted string (a URL, a file path) still
+    never reaches any of this - _skip_noncode consumes the whole string,
+    unexamined, before this function inspects any of its characters -
+    and a bare '/' preceded by anything OTHER than the whitelist (an
+    identifier that isn't a regex-permitting keyword, a number, a
+    closing ')'/']'/'}', or a closed string) is still refused outright
+    with _MAP_AMBIGUOUS_SLASH_FAIL, exactly as before this round - only
+    the unambiguous positions gained a parse; everywhere genuinely
+    ambiguous still gets a loud FAIL rather than a guess. See this
+    task's break-it notes for the full verification, including that
+    examples/research_dashboard.html - previously broken by the
+    blanket-refusal version of this function - now PASSes again with
+    its true, un-inflated extent."""
     m = re.search(r"(?:const|let|var)\s+MAP\s*=\s*", html)
     if not m:
         return None, _MAP_LOCATE_FAIL
@@ -2620,12 +2694,15 @@ def _map_body(html):
     i = start
     n = len(html)
     while i < n:
-        skip = _skip_noncode(html, i)
+        skip = _skip_map_noncode(html, i)
         if skip is not None:
             i = skip
             continue
         c = html[i]
         if c == "/":
+            # _skip_map_noncode already tried and failed to accept this
+            # '/' as a regex literal (wrong preceding token, or no
+            # same-line close) - nothing left to try.
             return None, _MAP_AMBIGUOUS_SLASH_FAIL
         if c == "{":
             depth += 1
@@ -2655,8 +2732,18 @@ def _map_entries(body):
     array field before `rank:` in one entry's own field order would have
     its rank split into a different fragment than its code, and the
     naive check would FAIL a genuinely faithful dashboard. Depth is
-    tracked with the same _skip_noncode logic _map_body uses, so a
-    string or comment inside an entry can't shift the count either.
+    tracked with the same _skip_map_noncode logic _map_body uses - not
+    just its string/comment half, but the regex-literal acceptance too:
+    `body` may legitimately contain a regex literal _map_body already
+    accepted (e.g. research_dashboard.html's own
+    `forbiddenScan:[/finding/i,...]`), and its characters are still
+    literally present in the text this function re-scans. Using plain
+    _skip_noncode here would miscount a brace inside that ALREADY-
+    ACCEPTED regex as if it were real structure - confirmed as a live
+    bug during this task's own verification (a `closer: /\\}/` field
+    that _map_body correctly consumed still corrupted every entry
+    boundary here, because this loop did not yet know to consume it
+    too, until this function was updated to share the same skip logic).
 
     depth 1 is MAP's own outer object and is deliberately never
     captured as a span: doing so would make every code/rank pair
@@ -2668,7 +2755,7 @@ def _map_entries(body):
     depth = 0
     entry_start = None
     while i < n:
-        skip = _skip_noncode(body, i)
+        skip = _skip_map_noncode(body, i)
         if skip is not None:
             i = skip
             continue
