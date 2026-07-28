@@ -2515,7 +2515,45 @@ def _map_body(html):
     break-it notes for the discriminating test (an UNBALANCED brace
     inside a string on each side; a balanced pair like `"A{B}C"` does
     not exercise this scanner at all, since naive counting also nets
-    zero on it)."""
+    zero on it).
+
+    Known, accepted limitation: a JS regex literal containing a brace as
+    one of its OWN characters (e.g. an asset field written literally as
+    ``closer: /\\}/`` or ``opener: /\\{/``) is not recognised as a regex by
+    _skip_noncode at all - it only knows strings and comments, and a bare
+    '/' that doesn't start '//' or '/*' is not special-cased, so every
+    character inside the regex - including an escaping backslash - passes
+    through as ordinary text and its brace is counted exactly like a bare
+    one would be. MAP is a data literal (never a JS regex-vs-division
+    problem, unlike _scan_js_states' domain), and neither shipped example
+    nor the self-test FIXTURE contains one, so this was left unhandled -
+    but BOTH directions were verified directly on examples/demo_dashboard
+    .html rather than left as reasoning:
+
+    - a ``\\}`` inside the regex reads exactly like the in-string '}' case
+      above: it closes the outer object far too early. Verified: injecting
+      one right after MAP's first field truncated the 12008-character body
+      to 39 characters, and c17 correctly FAILed naming every one of the
+      six codes as "absent from MAP" and every rank as "not recorded."
+    - a ``\\{`` inside the regex inflates depth by one, and - because the
+      REST of the enclosing <script> body is itself one balanced JS unit -
+      the scan does not run to end of document (that would require the
+      script's own final closing structure to be missing, which it isn't):
+      it over-captures the entire remainder of the script, stopping at the
+      script's own last '}', one character before ``</script>``. Verified
+      at two different injection points (MAP's first field, and MAP's very
+      last field) - both landed at the identical offset, confirming this is
+      the script's own natural close, not an accident of placement. In
+      this document that over-capture happened to include nothing
+      code:/rank:-shaped beyond the six genuine entries, so c17 correctly
+      PASSed (the injected field changed no tracked value) rather than
+      reporting "could not locate" - a different outcome than a first,
+      untested guess at this direction assumed. Whether a real generator's
+      other trailing script content could ever turn this SAME over-capture
+      into a false PASS or a spurious extra-owner FAIL (as the general '{'
+      case above already describes) depends on what that content is; that
+      broader question was not re-tested here and no further direction is
+      asserted for it."""
     m = re.search(r"(?:const|let|var)\s+MAP\s*=\s*", html)
     if not m:
         return None
@@ -2611,15 +2649,39 @@ def c17(ctx):
     naming the known fixtures (never a silent SKIP - a typo in the
     fixture name must not look like "nothing wrong here"); an
     unlocatable MAP is a FAIL with an explicit reason (never a PASS -
-    inability to check is not evidence of correctness); a missing code,
-    a code owning zero or more than one code: field, a wrong rank, or
-    absent banner text are each their own FAIL line, capped at 10 like
-    every other check in this file. The rank check requires the code's
-    OWN code: field, in exactly one MAP entry, to carry the right rank -
-    not just "the code and the rank both appear somewhere in one chunk"
-    - because a decoy object anywhere else in MAP (a bogus assets[]
-    entry, or an unrelated field) can otherwise vouch for a wrong real
-    entry's rank; see _map_entries and this task's break-it notes."""
+    inability to check is not evidence of correctness); a fixture whose
+    own codes/ranks disagree is a FAIL naming the fixture and the
+    unranked codes (never a silent PASS on a malformed fixture - see the
+    codes/ranks invariant check below); a missing code, a code owning
+    zero or more than one code: field, a wrong rank, or absent banner
+    text are each their own FAIL line, capped at 10 like every other
+    check in this file. The rank check requires the code's OWN code:
+    field, in exactly one MAP entry, to carry the right rank - not just
+    "the code and the rank both appear somewhere in one chunk" - because
+    a decoy object anywhere else in MAP (a bogus assets[] entry, or an
+    unrelated field) can otherwise vouch for a wrong real entry's rank;
+    see _map_entries and this task's break-it notes.
+
+    Codes/ranks invariant: exp["ranks"] is what the loop below actually
+    checks per code, so a fixture listing a code in "codes" without a
+    matching entry in "ranks" would let that ONE code's own removal from
+    MAP hide behind the coarse `code not in body` substring check (which
+    a leftover prose mention of the bare code text elsewhere in MAP can
+    satisfy even after the code's real field is gone) with nothing left
+    to catch it - a genuine, confirmed false PASS, found by an
+    independent review's break-it testing (constructing exactly that
+    fixture: an unranked code, its real code: field removed, a bare
+    mention of the code text left surviving elsewhere in MAP) and
+    reproduced here before this guard was added.
+    All three shipped fixtures keep codes and ranks 1:1 today, so this
+    never fires against selftest/research/demo - but nothing enforced
+    that invariant, and a future fixture that let it drift would
+    silently reopen the gap. Checked eagerly, against the fixture alone
+    (before ever touching ctx.html), and NOT with a bare `assert`:
+    assertions are stripped under `python -O`, which would make this
+    guard vanish exactly when someone runs the checker that way - a
+    malformed fixture must FAIL loudly under every interpreter flag, not
+    only some of them."""
     name = "expected asset codes, ranks, and banner text present"
     rule = "section 8.4/section 8.5"
     if not ctx.expect:
@@ -2629,6 +2691,11 @@ def c17(ctx):
         return Result(17, name, rule, FAIL,
                       ["unknown fixture %r; known: %s"
                        % (ctx.expect, ", ".join(sorted(EXPECTATIONS)))])
+    unranked = sorted(set(exp["codes"]) - set(exp["ranks"]))
+    if unranked:
+        return Result(17, name, rule, FAIL,
+                      ["fixture %r is internally inconsistent: codes "
+                       "without ranks: %s" % (ctx.expect, unranked)])
     body = _map_body(ctx.html)
     if body is None:
         return Result(17, name, rule, FAIL,
