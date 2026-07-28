@@ -537,17 +537,49 @@ def c08(ctx):
     return Result(8, name, rule, PASS)
 
 
+_IMG_SRC_RX = re.compile(r"""\ssrc\s*=\s*['"]([^'"]*)['"]""", re.I)
+
+
 @check(9, "every <img src=> is a data: URI", "section 7")
 def c09(ctx):
     name = "every <img src=> is a data: URI"
     rule = "section 7"
+    # Region-graded exactly like checks 7 and 8: an <img> in live markup
+    # is a violation; one that exists only inside a script body, a style
+    # body or an HTML comment is constructed markup or documentation and
+    # gets a WARN for human adjudication rather than a FAIL. Routing this
+    # through _all_tags also gives check 9 the quote-aware, multi-line
+    # tag matching the other tag-based checks already had - its old
+    # per-line "<img[^>]*" scan could see neither.
     hits = []
-    for i, ln in enumerate(ctx.lines):
-        for m in re.finditer(r"""<img[^>]*\ssrc\s*=\s*['"]([^'"]*)['"]""",
-                             ln, re.I):
-            if not m.group(1).startswith("data:"):
-                hits.append((i + 1, ln))
-    return fail_on_hits(9, name, rule, hits)
+    for lineno, tag_name, tag_text in _all_tags(ctx):
+        if tag_name != "img":
+            continue
+        m = _IMG_SRC_RX.search(tag_text)
+        if m and not m.group(1).startswith("data:"):
+            hits.append((lineno, _flatten(tag_text)))
+    soft = []
+    seen = set()
+    for start, tag_name, tag_text, kind in _masked_region_tags(ctx):
+        if tag_name != "img":
+            continue
+        for m in _IMG_SRC_RX.finditer(tag_text):
+            if m.group(1).startswith("data:"):
+                continue
+            lineno = ctx.lineno_at(start + m.start(1))
+            if (lineno, m.group(1)) in seen:
+                continue
+            seen.add((lineno, m.group(1)))
+            soft.append("line %d: img src %s (inside %s - %s)"
+                        % (lineno, m.group(1)[:100],
+                           _REGION_LABEL[kind], _ADJUDICATE))
+    soft = _cap(soft)
+    problems = line_details(hits)
+    if problems:
+        return Result(9, name, rule, FAIL, problems + soft)
+    if soft:
+        return Result(9, name, rule, WARN, soft)
+    return Result(9, name, rule, PASS)
 
 
 @check(16, "output hygiene: DOCTYPE first, </html> last, no prose", "section 8.10")
