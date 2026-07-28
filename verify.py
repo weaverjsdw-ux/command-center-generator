@@ -120,6 +120,214 @@ def _mask_non_markup(html):
     return "".join(pieces), regions
 
 
+# A raw (unmasked) scan for one whole <script>...</script> pair. Shared by
+# Ctx.js_state_at below and by check 10's _script_bodies: deliberately the
+# SAME regex both places use, so "which body is offset X in" always means
+# the same thing regardless of which caller is asking. Non-greedy, so it
+# pairs an opening tag with the FIRST </script> found after it - this
+# matches real HTML5 raw-text parsing (a browser also stops a <script>
+# element at the first literal "</script" it sees, JS syntax or not), so
+# a <script>...</script>-shaped string sitting inside another live
+# script's own text truncates the enclosing body early. That is a real,
+# accepted limitation of tag-based body extraction, not something the
+# character-level JS scanner below is meant to fix.
+_SCRIPT_TAG_RX = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.S | re.I)
+
+# JS lexical states a character inside a <script> body can be in. Only
+# "code" is live, executing JavaScript; every other state is text that
+# merely LOOKS like code (a comment, a string's contents, a template
+# literal's contents, a regex literal).
+_JS_CODE = "code"
+_JS_SQSTRING = "sqstring"
+_JS_DQSTRING = "dqstring"
+_JS_TEMPLATE = "template"
+_JS_LINECOMMENT = "linecomment"
+_JS_BLOCKCOMMENT = "blockcomment"
+_JS_REGEX = "regex"
+
+_JS_STATE_LABEL = {
+    _JS_SQSTRING: "a JS string",
+    _JS_DQSTRING: "a JS string",
+    _JS_TEMPLATE: "a JS template literal",
+    _JS_LINECOMMENT: "a JS comment",
+    _JS_BLOCKCOMMENT: "a JS comment",
+    _JS_REGEX: "a JS regex literal",
+}
+
+
+def _js_regex_may_start(prev_code_char):
+    """Best-effort disambiguation of a bare '/' between "start of a regex
+    literal" and "division operator", using only the previous non-
+    whitespace character seen while in "code" state. A '/' right after an
+    identifier/number/closing bracket is (almost always) division; a '/'
+    anywhere else - after an operator, punctuation, or at the very start
+    - can start a regex literal. This is the same lightweight heuristic
+    lightweight JS syntax highlighters use; it is not perfect (it cannot
+    see keywords like `return` or `typeof`), but getting it wrong can
+    only ever widen what counts as "not live code" (a division treated as
+    a regex-open still just consumes characters as non-code state until
+    the next unescaped '/'), never narrow it - so a mistake here cannot
+    turn a real string/comment into "live", only the reverse."""
+    if prev_code_char == "":
+        return True
+    if prev_code_char.isalnum() or prev_code_char in "_$)]}":
+        return False
+    return True
+
+
+def _scan_js_states(text):
+    """Walk JS source text ONCE, left to right, tracking real lexical
+    state - live code, a '...' string, a "..." string, a `...` template
+    literal (with ${...} interpolation switching back to live code,
+    properly nested), a // line comment, a /* */ block comment, or a
+    best-effort regex literal - honouring backslash escapes. Returns a
+    list of per-character state labels, the same length as text, so the
+    state at a given offset within this body is states[offset - start].
+
+    This replaces an earlier same-line, quote-parity heuristic that was
+    provably unsound: counting quote characters before a match on its own
+    line cannot tell "inside a string" from "an odd number of unrelated
+    quotes happen to precede it" (an apostrophe in ordinary prose inside
+    an unrelated, already-closed string). This scanner is genuinely
+    stateful across the WHOLE body, so a properly closed string earlier
+    in the text can never bleed into a later, unrelated line - the
+    apostrophe in `someFunc("don't")` stays inside that double-quoted
+    string and never affects anything that follows it.
+
+    Deliberately still not a full JS parser: automatic-semicolon-
+    insertion edge cases and the exact regex/division rule (which needs
+    keyword lookback, not just the previous character) are out of scope.
+    Its failure mode is bounded and one-directional by construction - see
+    _js_regex_may_start - so it cannot manufacture a false "live" the way
+    the heuristic it replaces could."""
+    n = len(text)
+    states = [_JS_CODE] * n
+    stack = [[_JS_CODE, 0]]   # (state, brace_depth) - depth only used by
+                              # a "code" frame entered via ${ inside a
+                              # template literal, to find its matching }
+    last_code_char = ""
+    i = 0
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        top = stack[-1]
+        state = top[0]
+        if state == _JS_CODE:
+            if ch == "/" and nxt == "/":
+                stack.append([_JS_LINECOMMENT, 0])
+                states[i] = _JS_LINECOMMENT
+                i += 1
+                continue
+            if ch == "/" and nxt == "*":
+                stack.append([_JS_BLOCKCOMMENT, 0])
+                states[i] = _JS_BLOCKCOMMENT
+                i += 1
+                continue
+            if ch == "'":
+                stack.append([_JS_SQSTRING, 0])
+                states[i] = _JS_SQSTRING
+                i += 1
+                continue
+            if ch == '"':
+                stack.append([_JS_DQSTRING, 0])
+                states[i] = _JS_DQSTRING
+                i += 1
+                continue
+            if ch == "`":
+                stack.append([_JS_TEMPLATE, 0])
+                states[i] = _JS_TEMPLATE
+                i += 1
+                continue
+            if ch == "/" and _js_regex_may_start(last_code_char):
+                j = i + 1
+                in_class = False
+                while j < n:
+                    c = text[j]
+                    if c == "\n":
+                        break
+                    if c == "\\":
+                        j += 2
+                        continue
+                    if c == "[":
+                        in_class = True
+                    elif c == "]":
+                        in_class = False
+                    elif c == "/" and not in_class:
+                        j += 1
+                        break
+                    j += 1
+                for k in range(i, min(j, n)):
+                    states[k] = _JS_REGEX
+                i = j
+                last_code_char = "/"
+                continue
+            states[i] = _JS_CODE
+            if len(stack) > 1:
+                # inside a ${ ... } interpolation frame: track brace
+                # depth so a matching '}' pops back to the template
+                if ch == "{":
+                    top[1] += 1
+                elif ch == "}":
+                    if top[1] == 0:
+                        stack.pop()
+                        i += 1
+                        continue
+                    top[1] -= 1
+            if not ch.isspace():
+                last_code_char = ch
+            i += 1
+            continue
+        if state == _JS_LINECOMMENT:
+            states[i] = state
+            if ch == "\n":
+                stack.pop()
+            i += 1
+            continue
+        if state == _JS_BLOCKCOMMENT:
+            states[i] = state
+            if ch == "*" and nxt == "/":
+                states[i + 1] = state
+                i += 2
+                stack.pop()
+                continue
+            i += 1
+            continue
+        if state in (_JS_SQSTRING, _JS_DQSTRING):
+            quote = "'" if state == _JS_SQSTRING else '"'
+            states[i] = state
+            if ch == "\\":
+                if i + 1 < n:
+                    states[i + 1] = state
+                i += 2
+                continue
+            if ch == quote:
+                i += 1
+                stack.pop()
+                continue
+            i += 1
+            continue
+        if state == _JS_TEMPLATE:
+            states[i] = state
+            if ch == "\\":
+                if i + 1 < n:
+                    states[i + 1] = state
+                i += 2
+                continue
+            if ch == "`":
+                i += 1
+                stack.pop()
+                continue
+            if ch == "$" and nxt == "{":
+                states[i] = state
+                states[i + 1] = state
+                i += 2
+                stack.append([_JS_CODE, 0])
+                continue
+            i += 1
+            continue
+    return states
+
+
 class Ctx:
     def __init__(self, html, path, map_text=None, reference=False, expect=None):
         self.html = html
@@ -130,6 +338,7 @@ class Ctx:
         self.expect = expect
         self._masked = None
         self._regions = None
+        self._js_states = None
 
     def masked_html(self):
         """self.html with non-markup regions blanked out (see
@@ -152,6 +361,34 @@ class Ctx:
     def lineno_at(self, offset):
         """1-based physical line number of a document offset."""
         return self.html.count("\n", 0, offset) + 1
+
+    def js_state_at(self, offset):
+        """The real JS lexical state at a document offset that falls
+        inside a <script>...</script> body - _JS_CODE (live, executing),
+        _JS_SQSTRING/_JS_DQSTRING/_JS_TEMPLATE (a string's contents),
+        _JS_LINECOMMENT/_JS_BLOCKCOMMENT (a comment's contents), or
+        _JS_REGEX (a regex literal's contents). None if offset is not
+        inside any <script> body found by a raw scan of self.html (see
+        _SCRIPT_TAG_RX).
+
+        Backed by _scan_js_states, a real per-body character-level
+        tokenizer - not a per-line heuristic - so a match's
+        classification cannot be changed by unrelated text elsewhere on
+        the same line the way counting quote characters could. Computed
+        lazily and cached once per body: more than one check needs this
+        (check 10's MAP-assignment count here; Task 5's reference-word
+        checks are expected to reuse it rather than re-deriving their own
+        JS-awareness)."""
+        if self._js_states is None:
+            self._js_states = {}
+        for m in _SCRIPT_TAG_RX.finditer(self.html):
+            start, end = m.start(1), m.end(1)
+            if start <= offset < end:
+                if start not in self._js_states:
+                    self._js_states[start] = _scan_js_states(
+                        self.html[start:end])
+                return self._js_states[start][offset - start]
+        return None
 
     def find(self, pattern, flags=0):
         rx = re.compile(pattern, flags)
@@ -595,8 +832,6 @@ NAMED_COLORS = (
 _MAP_ASSIGN_RX = re.compile(
     r"\b(?:const|let|var)\s+MAP\s*=|\bwindow\.MAP\s*=")
 
-_SCRIPT_TAG_RX = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.S | re.I)
-
 
 def _offset_in_spans(offset, spans):
     return any(s <= offset < e for s, e in spans)
@@ -604,11 +839,11 @@ def _offset_in_spans(offset, spans):
 
 def _script_bodies(ctx):
     """[(start, end, region_kind)] for every <script>...</script> BODY
-    found by a raw scan of ctx.html - deliberately unmasked, because a
-    <script> tag can be found nested inside another live script's own
-    text (a JS string or template literal constructing markup, the
-    document.write() pattern checks 1/6/9 already treat as real) and
-    that nesting is exactly what this function needs to see.
+    found by a raw scan of ctx.html (see _SCRIPT_TAG_RX) - deliberately
+    unmasked, because a <script> tag can be found nested inside another
+    live script's own text (a JS string or template literal constructing
+    markup, the document.write() pattern checks 1/6/9 already treat as
+    real) and that nesting is exactly what this function needs to see.
 
     region_kind is None when the tag's own opening '<script' sits in
     live markup - a genuinely live, executing script. Otherwise it is
@@ -618,44 +853,15 @@ def _script_bodies(ctx):
     "comment" for one sitting inside an HTML comment. Same idea as
     _masked_region_tags, at body-span granularity instead of per-tag.
 
-    Caveat this function cannot resolve on its own: the body/close-tag
-    pairing (like _mask_non_markup's own pairing) takes the FIRST
-    </script> after an opening tag, so a <script>...</script>-shaped
-    string sitting INSIDE an otherwise-live script body gets silently
-    absorbed into that live body rather than split out as its own
-    nested entry - the two are textually overlapping, not nested in any
-    way a single open/close pairing can represent. c10 does not lean on
-    region_kind alone for that case; see _looks_commented_or_quoted."""
+    This says nothing about what happens WITHIN a body that region_kind
+    reports as live - text inside it can still be a JS comment, string or
+    template literal rather than executing code. c10 answers that with
+    Ctx.js_state_at, a real per-character JS tokenizer, not with anything
+    computed here."""
     out = []
     for m in _SCRIPT_TAG_RX.finditer(ctx.html):
         out.append((m.start(1), m.end(1), ctx.region_kind_at(m.start())))
     return out
-
-
-def _line_text_before(ctx, offset):
-    """The text of offset's own physical line, from the line's start up
-    to (not including) offset itself."""
-    line_start = ctx.html.rfind("\n", 0, offset) + 1
-    return ctx.html[line_start:offset]
-
-
-def _looks_commented_or_quoted(before):
-    """True if a match preceded on its own source line by this text is
-    plausibly sitting inside a JS '//' line comment or a same-line
-    quoted string/template literal.
-
-    A same-line, quote-counting heuristic, not a JS parser - and
-    deliberately scoped to a single line: checking only the text before
-    the match on ITS OWN line means a wrong call affects just that one
-    match's grading (WARN vs live), never blanks or swallows unrelated
-    code elsewhere in the document the way a whole-document JS
-    comment/string stripper could (a stray quote inside a regex literal,
-    e.g. /['"]/text, would make a global stripper pair across everything
-    that follows - this function cannot make that mistake because it
-    never looks past the start of the current line)."""
-    if "//" in before:
-        return True
-    return any(before.count(q) % 2 == 1 for q in ('"', "'", "`"))
 
 
 @check(10, "exactly one MAP object assignment", "section 8.2")
@@ -676,10 +882,13 @@ def c10(ctx):
             lineno = ctx.lineno_at(abs_off)
             if kind is not None:
                 soft_note(lineno, _REGION_LABEL[kind])
-            elif _looks_commented_or_quoted(_line_text_before(ctx, abs_off)):
-                soft_note(lineno, "a JS comment or string")
-            else:
+                continue
+            js_state = ctx.js_state_at(abs_off)
+            if js_state is None or js_state == _JS_CODE:
                 live_hits.append((lineno, m.group(0)))
+            else:
+                soft_note(lineno, _JS_STATE_LABEL.get(
+                    js_state, "a JS comment or string"))
     # a bare "MAP =" mention sitting directly inside an HTML comment,
     # with no enclosing <script> tag at all
     body_spans = [(s, e) for s, e, _ in bodies]
@@ -695,14 +904,14 @@ def c10(ctx):
             else Result(10, name, rule, PASS)
     if not live_hits:
         if soft:
-            # _looks_commented_or_quoted is a same-line quote-counting
-            # heuristic, not a JS parser: ordinary prose in a comment
-            # (an apostrophe in "don't", a URL's "//" before the real
-            # declaration on the same line) can push the one genuine
-            # live assignment into this bucket. Zero confirmed-live
-            # hits is not the same claim as zero assignments existing
-            # at all when something MAP-shaped was found; WARN and let
-            # a human look, rather than FAIL a page that may be fine.
+            # js_state_at is a real tokenizer, not a heuristic, so this
+            # path should be rare - but it is not a full JS parser
+            # (regex-vs-division needs keyword lookback this doesn't do;
+            # see _js_regex_may_start), so a residual miscall is still
+            # possible. Zero confirmed-live hits alongside something
+            # MAP-shaped is not the same claim as zero assignments
+            # existing at all; WARN and let a human look, rather than
+            # FAIL a page that may be fine.
             return Result(10, name, rule, WARN, soft)
         return Result(10, name, rule, FAIL,
                       ["no MAP object assignment found"])
@@ -935,8 +1144,20 @@ INJECTIONS.update({
 })
 
 INJECTIONS.update({
-    10: ("second MAP object assignment",
-         _inject_before("function render()", "var MAP = { assets: [] };\n"),
+    # The duplicate sits on a line with an apostrophe-bearing string
+    # BEFORE the assignment (someFunc("don't");) - the exact shape that
+    # defeated the same-line quote-parity heuristic check 10 used to use
+    # (an odd count of quote characters earlier on the line, with no
+    # actual string spanning into the assignment). This strengthens the
+    # input to prove the real JS state scanner correctly resolves the
+    # apostrophe as closed inside its own double-quoted string rather
+    # than reproducing the false negative; it does not change what the
+    # injection is supposed to prove, so the expected set stays {10}.
+    10: ("second MAP object assignment, on a line with an "
+         "apostrophe-bearing string before it (regression guard)",
+         _inject_before(
+             "function render()",
+             "someFunc(\"don't\"); var MAP = { assets: [] };\n"),
          {10}),
     11: ("hardcoded hex color outside :root",
          _inject_before("</style>", "h1{ color:#ff0000; }\n"),
