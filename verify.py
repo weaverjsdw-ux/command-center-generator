@@ -30,6 +30,85 @@ def check(num, name, rule):
     return deco
 
 
+# --------------------------------------------------------------------------
+# document preprocessing
+# --------------------------------------------------------------------------
+
+# One tag's attribute region, matched quote-aware: whole quoted runs are
+# consumed atomically, so a literal '>' inside a quoted attribute value
+# (valid HTML5 - inside an attribute value only '<', '&' and the
+# enclosing quote need escaping) cannot end the tag early and hide an
+# attribute that comes after it.
+_ATTR_RUN = r"""(?:"[^"]*"|'[^']*'|[^>"'])*"""
+
+# Leftmost-first document scan: an HTML comment opener, or one whole
+# opening tag. Ordinary tags are matched (and then simply skipped over),
+# so a "<!--" sitting inside a quoted attribute value is consumed as part
+# of that tag and never mistaken for a comment opener.
+_MASK_SCAN_RX = re.compile(r"<!--|<([a-zA-Z][\w-]*)\b" + _ATTR_RUN + ">")
+
+_MASKED_ELEMENTS = ("script", "style")
+
+
+def _blank_run(text):
+    """Replace every character with a space except line terminators, so
+    the result has the same length and the same newline offsets as the
+    input. Offsets taken in the result stay valid against the original."""
+    return re.sub(r"[^\n\r]", " ", text)
+
+
+def _mask_non_markup(html):
+    """Return a copy of html with its non-markup regions blanked out: the
+    *bodies* of <script> and <style> elements, and HTML comments in full.
+
+    Why this exists: a tag-shaped run of text inside a JS template
+    literal, a JS string, a CSS rule or a commented-out example is not a
+    live resource reference. A regex scan over raw document text cannot
+    tell the two apart, and piling more special cases into the tag
+    pattern does not fix that - it is a region problem, not a pattern
+    problem. Masking first makes the distinction structural.
+
+    The opening <script ...> / <style ...> tags themselves stay visible:
+    checks legitimately inspect their attributes (src=, type=). Only what
+    sits between that tag's '>' and its closing tag is blanked.
+
+    The copy is offset-preserving - same length, same newline positions -
+    so a match offset in it still yields the correct line number when
+    counted against the original document.
+    """
+    pieces = []
+    kept = 0    # next index of html not yet emitted
+    scan = 0    # next index to search from
+    while True:
+        m = _MASK_SCAN_RX.search(html, scan)
+        if m is None:
+            break
+        if m.group(0) == "<!--":
+            end = html.find("-->", m.end())
+            # An unterminated comment really does swallow the rest of the
+            # document in a browser, so masking to EOF matches what the
+            # page actually renders.
+            stop = len(html) if end == -1 else end + 3
+            blank_from, blank_to, scan = m.start(), stop, stop
+        elif m.group(1).lower() in _MASKED_ELEMENTS:
+            close_rx = re.compile(r"</%s\s*>" % re.escape(m.group(1)), re.I)
+            close = close_rx.search(html, m.end())
+            if close is None:
+                blank_from, blank_to, scan = m.end(), len(html), len(html)
+            else:
+                blank_from = m.end()
+                blank_to = close.start()
+                scan = close.end()
+        else:
+            scan = m.end()      # ordinary tag: skipped over, nothing masked
+            continue
+        pieces.append(html[kept:blank_from])
+        pieces.append(_blank_run(html[blank_from:blank_to]))
+        kept = blank_to
+    pieces.append(html[kept:])
+    return "".join(pieces)
+
+
 class Ctx:
     def __init__(self, html, path, map_text=None, reference=False, expect=None):
         self.html = html
@@ -38,6 +117,15 @@ class Ctx:
         self.map_text = map_text
         self.reference = reference
         self.expect = expect
+        self._masked = None
+
+    def masked_html(self):
+        """self.html with non-markup regions blanked out (see
+        _mask_non_markup). Computed once and cached: it is O(document) to
+        build and more than one check scans it."""
+        if self._masked is None:
+            self._masked = _mask_non_markup(self.html)
+        return self._masked
 
     def find(self, pattern, flags=0):
         rx = re.compile(pattern, flags)
@@ -89,25 +177,29 @@ NOT_CHECKED = [
 # --------------------------------------------------------------------------
 
 # Matches one whole opening tag at a time, respecting quoted attribute
-# values. Naive "[^>]*" tag matching breaks on a literal '>' inside a
-# quoted attribute (e.g. title="a>b"), which is valid HTML5 - only '<',
-# '&', and the enclosing quote need escaping inside an attribute value.
-# Such a '>' would wrongly end the match early and hide any attribute
-# that comes after it (a real src=/href=/type= could be missed
-# entirely). This alternates over whole quoted runs (which may contain
-# '>') and single non-quote-non-'>' characters, so a quoted '>' can
-# never prematurely close the tag.
-_TAG_RX = re.compile(r"""<([a-zA-Z][\w-]*)\b(?:"[^"]*"|'[^']*'|[^>"'])*>""")
+# values (see _ATTR_RUN for why naive "[^>]*" tag matching is wrong).
+_TAG_RX = re.compile(r"<([a-zA-Z][\w-]*)\b" + _ATTR_RUN + ">")
 
 
 def _all_tags(ctx):
     """Yield (lineno, tag_name_lower, tag_text) for every opening tag in
-    the document. Matching runs over the whole document text, not
-    line-by-line: a tag whose closing '>' lands on a physical line
-    different from its '<' is ordinary, valid HTML (attribute values
-    wrap), and a per-line scan would silently never see it as one tag
-    at all - not a quoting edge case, a structural one."""
-    for m in _TAG_RX.finditer(ctx.html):
+    the document's *markup* regions.
+
+    Two properties, each of which a previous shape of this function got
+    wrong:
+
+    - Matching runs over the whole document text, not line-by-line: a tag
+      whose closing '>' lands on a physical line different from its '<'
+      is ordinary, valid HTML (attribute values wrap), and a per-line
+      scan would silently never see it as one tag at all.
+
+    - Matching runs over the *masked* document, so tag-shaped text inside
+      a <script> body, a <style> body or an HTML comment is not mistaken
+      for a live resource reference. Line numbers are still counted
+      against ctx.html, which is exact because masking is
+      offset-preserving.
+    """
+    for m in _TAG_RX.finditer(ctx.masked_html()):
         lineno = ctx.html.count("\n", 0, m.start()) + 1
         yield lineno, m.group(1).lower(), m.group(0)
 
@@ -135,12 +227,14 @@ def c01(ctx):
     tag_hits = [(lineno, _flatten(tag_text))
                 for lineno, tag_name, tag_text in _all_tags(ctx)
                 if tag_name == "script" and type_module_rx.search(tag_text)]
-    # Union with the old direct per-line substring search: for this
+    # Union with a direct search over the RAW (unmasked) lines: for this
     # file://-breaker check the costs are asymmetric. A miss ships a
     # blank page; a false flag costs a human one glance at a cited line
     # to see it's inside a string literal. Deliberately over-report -
-    # do not generalise this union to checks whose false positives land
-    # on ordinary content (see check 2).
+    # this is also what keeps document.write('<script ...>') caught now
+    # that script bodies are masked out of the tag scan. Do not
+    # generalise this union to checks whose false positives land on
+    # ordinary content (see check 2).
     direct_hits = ctx.find(r"""<script[^>]*type\s*=\s*['"]module['"]""", re.I)
     hits = _merge_hits(tag_hits, direct_hits)
     return fail_on_hits(1, name, rule, hits)
@@ -203,8 +297,10 @@ def c06(ctx):
     tag_hits = [(lineno, _flatten(tag_text))
                 for lineno, tag_name, tag_text in _all_tags(ctx)
                 if tag_name == "script" and src_rx.search(tag_text)]
-    # Union with the old direct per-line substring search - same
-    # asymmetric-cost reasoning as check 1 above.
+    # Union with a direct search over the RAW (unmasked) lines - same
+    # asymmetric-cost reasoning as check 1 above. This is the path that
+    # catches document.write('<script src=...>'), whose tag text lives
+    # inside a JS string and so is masked out of the tag scan.
     direct_hits = ctx.find(r"<script[^>]*\ssrc\s*=", re.I)
     hits = _merge_hits(tag_hits, direct_hits)
     return fail_on_hits(6, name, rule, hits)
@@ -237,6 +333,10 @@ def _external_refs(ctx):
         attr_m = attr_rx.search(tag_text)
         if attr_m:
             out.append((lineno, attr_m.group(1), tag_name == "link"))
+    # The CSS url() scan stays on RAW lines on purpose. Its two live
+    # homes are exactly the regions the mask blanks: a <style> body, and
+    # a script assigning el.style.background = "url(...)". Masking here
+    # would turn real violations into false passes.
     for i, ln in enumerate(ctx.lines):
         for m in re.finditer(r"url\(\s*['\"]?(https?://[^'\")]+)", ln, re.I):
             out.append((i + 1, m.group(1), False))
@@ -288,6 +388,7 @@ def c08(ctx):
     hits = {}
     for lineno, tag_text in _local_ref_tags(ctx):
         hits[lineno] = _flatten(tag_text)
+    # RAW lines here, deliberately - see the note in _external_refs.
     for i, ln in enumerate(ctx.lines):
         if re.search(r"url\(\s*['\"]?(?!data:|https?:|#)[^)'\"]+\.[a-z0-9]{2,5}",
                      ln, re.I):
@@ -333,6 +434,13 @@ def c16(ctx):
 # self-test
 # --------------------------------------------------------------------------
 
+# The fixture carries two deliberate false-positive traps: a multi-line
+# tag inside a JS template literal, and a multi-line HTML comment holding
+# lookalike markup. Neither is a live resource reference, so the
+# "baseline trips 0 checks" assertion below is a standing regression test
+# against a check that scans raw text with no idea which regions are
+# actually markup. INJECTIONS only ever proves violations are caught;
+# this is what proves legitimate content is not flagged.
 FIXTURE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -345,10 +453,17 @@ body{ background:var(--bg); color:var(--ink); font-family:var(--mono); }
 </head>
 <body>
 <div id="app"></div>
+<!--
+reference only, not live:
+<link href="https://cdn.example.com/also-documentation.css"
+>
+-->
 <script>
 var MAP = { assets: [ { code: "AAA-1", rank: 1 } ] };
 function render(){ document.getElementById('app').textContent = MAP.assets[0].code; }
 render();
+const exampleEmbed = `<link
+  href="https://cdn.example.com/documentation-only.css">`;
 </script>
 </body>
 </html>
