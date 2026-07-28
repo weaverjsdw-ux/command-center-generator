@@ -3281,19 +3281,58 @@ SECTION_8_COVERAGE = {
 }
 
 
+_HTML_CLOSE_RX = re.compile(r"</html\s*>", re.I)
+_SELF_CHECK_RX = re.compile(r"<!--\s*SELF-CHECK\s*:(.*?)-->", re.S | re.I)
+
+
 def _attestation(html):
     """Parse the model's claimed section 8 results from its own
     SELF-CHECK comment (see GENERATOR_PACKAGE.md section 8's amended
-    preamble). Returns None if the document carries no such comment at
-    all - the file predates the attestation requirement, or the model
-    dropped it, and there is no claim to adjudicate. Returns {} if a
-    SELF-CHECK comment exists but no `N=value` entry inside it parsed -
-    a malformed block, distinct from no block at all. Otherwise returns
-    {rule number: claimed value}, value one of "pass", "fail", "n/a"
-    (lowercased). Distinguishing None from {} is what lets check 18 tell
-    a missing requirement (SKIP) apart from a present-but-garbled one
-    (WARN)."""
-    m = re.search(r"<!--\s*SELF-CHECK\s*:(.*?)-->", html, re.S | re.I)
+    preamble). Returns None if no comment sits in the one position the
+    amendment specifies - "the final line inside the document,
+    immediately before the closing </html> tag" - so there is no claim
+    to adjudicate. Returns {} if a comment IS there but no `N=value`
+    entry inside it parsed - a malformed block, distinct from no block
+    at all. Otherwise returns {rule number: claimed value}, value one of
+    "pass", "fail", "n/a" (lowercased). Distinguishing None from {} is
+    what lets check 18 tell a missing requirement (SKIP) apart from a
+    present-but-garbled one (WARN).
+
+    Deliberately position-anchored, not a leftmost `re.search` over the
+    raw document: a naive leftmost search is fooled by ANY earlier
+    SELF-CHECK-shaped text - a decoy planted inside a <script> body's
+    template literal (raw text matching does not know it is looking at
+    live JS, not markup), an earlier real HTML comment documenting the
+    format, anything - because leftmost-match means the first one found
+    permanently shadows the real, required-to-be-last one. Confirmed
+    empirically: routing this through ctx.masked_html() does not fix it
+    either, unlike every other check in this file that risks the
+    live-vs-decoy confusion - masked_html() blanks EVERY comment
+    (script/style bodies too), and the genuine attestation IS a comment,
+    so masking would erase the real block along with the decoy. Position
+    is the only discriminator that works here.
+
+    _HTML_CLOSE_RX finds every "</html>"-shaped run of text (case-
+    insensitive, tolerant of internal whitespace) and takes the LAST one
+    as the document's true closing tag - matching what check 16 already
+    treats as authoritative ("does not end with </html>"). Everything
+    before that position, right-trimmed of whitespace, is the
+    candidate's required end. _SELF_CHECK_RX then finds every complete,
+    self-contained SELF-CHECK comment (non-greedy, so each match ends at
+    its OWN first "-->", never swallowing past it into unrelated
+    document text); only a match whose end lands exactly at that
+    trimmed boundary is the real attestation. A decoy elsewhere - before
+    or inside a masked region - never lands there, because something
+    always sits between its own "-->" and the true closing tag."""
+    closes = list(_HTML_CLOSE_RX.finditer(html))
+    if not closes:
+        return None
+    body_end = len(html[:closes[-1].start()].rstrip())
+    m = None
+    for cand in _SELF_CHECK_RX.finditer(html):
+        if cand.end() == body_end:
+            m = cand
+            break
     if m is None:
         return None
     claims = {}
@@ -3310,18 +3349,23 @@ def c18(ctx):
     is correct - checks 1-17 already do that - it derives whether the
     MODEL'S OWN CLAIM about those results was honest.
 
-    One-directional by design: a claimed "pass" on a section 8 rule this
-    tool can mechanically cover, where the covering check(s) actually
-    FAILed, is a misreport - a second, distinct defect layered on top of
-    the underlying failure. Both are reported: the underlying check
-    FAILs on its own line (it runs independently either way), and check
-    18 FAILs separately, naming the misreport. A claimed "fail" where
-    the covering checks all passed is the model being conservative about
-    its own work, not a defect, and is not reported as a problem here. A
-    rule with no covering check (section 8.8, 8.9) can be neither
-    confirmed nor contradicted, so a claim on it is recorded as
-    unadjudicated rather than silently treated as either true or false -
-    same for a rule the block simply never mentions.
+    One-directional by design: a claimed "pass" OR a claimed "n/a" on a
+    section 8 rule this tool can mechanically cover, where the covering
+    check(s) actually FAILed, is a misreport - a second, distinct defect
+    layered on top of the underlying failure. Both flavors share one
+    justification: if a covering check FAILed, the rule demonstrably DID
+    apply (the check found a live violation of it), so neither "it
+    passed" nor "it does not apply here" can be true at the same time.
+    Both are reported: the underlying check FAILs on its own line (it
+    runs independently either way), and check 18 FAILs separately,
+    naming the misreport - worded distinctly per flavor so a reader can
+    tell a false "pass" from a false "n/a" in the evidence. A claimed
+    "fail" where the covering checks all passed is the model being
+    conservative about its own work, not a defect, and is not reported
+    as a problem here. A rule with no covering check (section 8.8, 8.9)
+    can be neither confirmed nor contradicted, so a claim on it is
+    recorded as unadjudicated rather than silently treated as either
+    true or false - same for a rule the block simply never mentions.
 
     Reuses ctx.result_for() rather than calling each other check's
     function directly, so a normal run_checks() pass - which already
@@ -3334,8 +3378,9 @@ def c18(ctx):
     claims = _attestation(ctx.html)
     if claims is None:
         return Result(18, name, rule, SKIP,
-                      ["no SELF-CHECK block; file predates the section 8 "
-                       "attestation requirement"])
+                      ["no SELF-CHECK block present in the required "
+                       "position (immediately before </html>); the "
+                       "model's self-check claims cannot be compared"])
     if not claims:
         return Result(18, name, rule, WARN,
                       ["SELF-CHECK block present but no parseable entries"])
@@ -3356,10 +3401,15 @@ def c18(ctx):
                 % (rule_num, claimed))
             continue
         failed = [n for n in covering if others.get(n) == FAIL]
-        if claimed == "pass" and failed:
+        if failed and claimed == "pass":
             misreports.append(
                 "misreported section 8.%d: claimed pass, checks %s failed"
                 % (rule_num, failed))
+        elif failed and claimed == "n/a":
+            misreports.append(
+                "misreported section 8.%d: claimed not applicable, but "
+                "checks %s found a live violation - the rule demonstrably "
+                "applied" % (rule_num, failed))
     details = misreports + unadjudicated
     if misreports:
         return Result(18, name, rule, FAIL, details)

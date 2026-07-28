@@ -262,7 +262,7 @@ Run this against your generated file. If any check fails, fix and re-check; do n
 Then emit your results as the final line inside the document, immediately before
 the closing `</html>` tag:
 
-    <!-- SELF-CHECK: 1=pass 2=pass 3=pass 4=pass 5=pass 6=pass 7=pass 8=pass 9=pass 10=pass -->
+    <!-- SELF-CHECK: 1=<pass|fail|n/a> 2=<pass|fail|n/a> 3=<pass|fail|n/a> 4=<pass|fail|n/a> 5=<pass|fail|n/a> 6=<pass|fail|n/a> 7=<pass|fail|n/a> 8=<pass|fail|n/a> 9=<pass|fail|n/a> 10=<pass|fail|n/a> -->
 
 One entry per numbered check below (1-10), in order. Permitted values:
 `pass`, `fail`, `n/a` — use `n/a` only where the rule genuinely does not
