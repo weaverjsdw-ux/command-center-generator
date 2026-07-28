@@ -1949,6 +1949,437 @@ def c13(ctx):
     return Result(13, name, rule, WARN, soft)
 
 
+# --------------------------------------------------------------------------
+# checks 14-15: section 6.6 (fonts: fallback stack, non-blocking load)
+# --------------------------------------------------------------------------
+
+GENERIC_FAMILIES = ("monospace", "sans-serif", "serif", "system-ui",
+                    "ui-monospace", "ui-sans-serif", "ui-serif",
+                    "cursive", "fantasy")
+
+_VAR_REF_RX = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*))?\)")
+
+
+def _resolve_font_value(value, tokens):
+    """Substitute var(--x) / var(--x, inline-fallback) references
+    against tokens (Ctx.root_tokens()), repeatedly, so a token that
+    itself references another token still resolves
+    (--heading-font:var(--font-mono)). Bounded iteration guards a
+    cyclic token definition (--a:var(--b); --b:var(--a);) without
+    hanging; a var() whose name is not in tokens AND carries no inline
+    fallback argument is left unresolved on purpose - "var(" surviving
+    in the return value is the caller's signal to treat this as
+    UNCERTAINTY (WARN), never as proof of a missing fallback (FAIL).
+    See the c14 docstring for why that direction matters."""
+    resolved = value
+    for _ in range(6):
+        m = _VAR_REF_RX.search(resolved)
+        if not m:
+            break
+        if m.group(1) in tokens:
+            replacement = tokens[m.group(1)]
+        elif m.group(2) is not None:
+            replacement = m.group(2).strip()
+        else:
+            break
+        resolved = resolved[:m.start()] + replacement + resolved[m.end():]
+    return resolved
+
+
+_FONT_FACE_BLOCK_RX = re.compile(r"@font-face\s*\{[^{}]*\}", re.I | re.S)
+
+
+def _live_style_font_declarations(ctx):
+    """(lineno, value) for every font-family declaration in a live
+    <style> body. Mirrors _non_root_declarations exactly (same body
+    scan, same :root/CSS-comment masking via _blank_run so offsets stay
+    valid), with one addition: @font-face{...} blocks are ALSO masked
+    out before the declaration regex runs, not filtered out afterward.
+
+    An @font-face rule's own font-family declaration NAMES the family
+    being defined (`@font-face{font-family:'Custom Font';
+    src:local('X')}`) - it is not a font-family STACK, so section 6.6's
+    fallback-tail requirement does not apply to it, unlike an ordinary
+    rule's font-family declaration. @media/@supports/@keyframes are
+    deliberately NOT given this treatment: they nest real declarations
+    that do need checking.
+
+    This function exists because a LINE-based version of the same
+    exemption (blank the physical lines an @font-face block spans, then
+    filter _non_root_declarations's line-numbered output against that
+    set) was tried first and broken by this task's own break-it
+    testing: a minified single physical line holding both an
+    @font-face block and a separate, real, live font-family violation
+    exempted the real violation too, purely because it shared a line
+    number with the @font-face block - a false PASS on a genuine
+    violation. Masking by OFFSET, at the exact character span, the same
+    way _non_root_declarations already masks :root, cannot make that
+    mistake: nothing outside the @font-face block's own span is ever
+    touched, however many other rules share its physical line."""
+    bodies = _style_bodies(ctx)
+    nested = [(s, e) for s, e, kind in bodies if kind is not None]
+    out = []
+    for start, end, kind in bodies:
+        if kind is not None:
+            continue
+        body = ctx.html[start:end]
+        masked = _ROOT_BLOCK_RX.sub(lambda m: _blank_run(m.group(0)), body)
+        masked = _CSS_COMMENT_RX.sub(lambda m: _blank_run(m.group(0)), masked)
+        masked = _FONT_FACE_BLOCK_RX.sub(lambda m: _blank_run(m.group(0)), masked)
+        for m in _CSS_DECL_RX.finditer(masked):
+            if m.group(1).strip().lower() != "font-family":
+                continue
+            abs_off = start + m.start()
+            if _offset_in_spans(abs_off, nested):
+                continue
+            out.append((ctx.lineno_at(abs_off), m.group(2).strip()))
+    return out
+
+
+def _looks_like_font_stack_value(value):
+    """True if value has the SHAPE of a CSS font-family value: a
+    comma-separated fallback list, a single quoted family name (the
+    exact single-font-no-fallback shape this check exists to catch), or
+    a bare generic family word on its own. False for a bare number,
+    keyword or unquoted single word - those are never a font-family
+    value, whatever the token's NAME suggests."""
+    v = value.strip()
+    if not v:
+        return False
+    if "," in v:
+        return True
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+        return True
+    return v.strip("'\"").lower() in GENERIC_FAMILIES
+
+
+def _is_font_family_token(token_name, value):
+    """True if a :root custom property plausibly holds a font-family
+    STACK, so section 6.6's fallback-tail requirement applies to its
+    own definition too - see the c14 docstring for why a token-based
+    design's :root tokens are checked as well as live declarations
+    ("check both sites").
+
+    Two gates, both required, deliberately conservative toward NOT
+    flagging:
+
+    - NAME must contain "font" (matches this project's own convention -
+      --font-mono/--font-sans/--font-serif in examples/*.html). This is
+      a literal-word substring check, never a check for a
+      GENERIC_FAMILIES word (serif/monospace/...) appearing in the
+      NAME - that is exactly the hyphen/word-boundary trap that
+      produced 40 false findings in checks 11/13 (a generic family word
+      sits inside plenty of token names, e.g. --serif-heading-color,
+      that hold a color, not a font stack).
+    - VALUE must look like a font-family value (see
+      _looks_like_font_stack_value). This excludes the many other
+      legitimate "font-*"-named design tokens that are not stacks at
+      all - --font-base:16px, --font-scale:1.25, --font-weight:600,
+      --font-leading:1.5 - which a name-only filter would wrongly flag:
+      a bare number or keyword is never a font-family value.
+
+    Known, accepted limitation: a font-role token holding a single BARE
+    (unquoted, no comma) non-generic family name and nothing else -
+    --font-primary:Arial, with no fallback at all - fails the shape
+    gate and is not examined here. That specific violation still gets
+    caught if the token is referenced anywhere by a live font-family:
+    declaration (resolved and judged at the point of use, by the main
+    declaration loop in c14) - it escapes ONLY when the bad token is
+    defined but never referenced, i.e. dead CSS that cannot affect the
+    rendered page."""
+    if "font" not in token_name.lower():
+        return False
+    return _looks_like_font_stack_value(value)
+
+
+# Quote-matched alternation, like _ATTR_PARSE_RX elsewhere in this file -
+# never r"""['"]([^'"]*)['"]""", which accepts a MISMATCHED closing quote
+# (opens on the outer double quote, closes on the first embedded single
+# quote) and truncates the value. A real, confirmed defect during this
+# task's own break-it testing: style="font-family:'Weird Font'" has a
+# single quote inside a double-quoted attribute value - exactly the shape
+# a font-family value with a quoted family name always has - and the
+# mismatched-quote pattern silently truncated the captured value to just
+# "font-family:", dropping the font name and its (missing) fallback
+# entirely. That is a hidden hit: a live, FAIL-worthy inline style=
+# declaration would have gone unexamined and the check would PASS a real
+# violation.
+_STYLE_ATTR_RX = re.compile(r"""\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
+
+
+def _inline_style_font_values(ctx):
+    """(lineno, value) for every font-family declaration inside a LIVE
+    inline style="" attribute. Offset-based against the declaration's
+    own position within the attribute value (not the tag's start), so a
+    tag whose attributes wrap onto a later physical line still cites
+    the line the declaration actually sits on - same reasoning
+    _masked_region_external_refs already documents for other checks.
+    _non_root_declarations only ever looks at <style> body text;
+    section 6.6's fallback-stack requirement binds a live inline
+    style= rule exactly the same way, so c14 must look here too."""
+    out = []
+    for start, tag_name, tag_text in _tags_in(ctx.masked_html()):
+        attr_m = _STYLE_ATTR_RX.search(tag_text)
+        if not attr_m:
+            continue
+        group_idx = 1 if attr_m.group(1) is not None else 2
+        value_text = attr_m.group(group_idx)
+        base = start + attr_m.start(group_idx)
+        for m in _CSS_DECL_RX.finditer(value_text):
+            if m.group(1).strip().lower() != "font-family":
+                continue
+            out.append((ctx.lineno_at(base + m.start()), m.group(2).strip()))
+    return out
+
+
+_FONT_FAMILY_TEXT_RX = re.compile(r"font-family\s*:\s*[^;{}\n]*", re.I)
+
+
+def _soft_font_declarations(ctx):
+    """[note] strings for font-family-shaped text that is NOT a live
+    style rule: inside a CSS comment in a live <style> body, inside a
+    <style> body that only exists in a masked region (nested in a JS
+    string/template literal or an HTML comment), or sitting directly
+    inside a live <script> body (a JS string constructing markup or
+    CSS) or an HTML comment with no enclosing <style> tag at all.
+    Region-graded and reported at WARN with the adjudication note,
+    never dropped and never FAIL - same reasoning as checks 7-9's and
+    c11's soft buckets.
+
+    Unlike c11's soft-color-literal scan, the final raw-text pass below
+    is not narrowed to the "comment" region kind. A bare color-literal
+    pattern (#fff, rgba(...)) is common in ordinary JS unrelated to CSS,
+    so c11 narrows its pass to avoid noise; "font-family:" is a far more
+    specific textual shape that essentially only appears where CSS or
+    CSS-shaped text is being constructed, so including the "script"
+    region kind here is low-noise and, per this task's resolved
+    ambiguity, required: a font-family mention inside a JS string must
+    still surface, not vanish."""
+    bodies = _style_bodies(ctx)
+    seen = set()
+    out = []
+
+    def add(lineno, snippet, label):
+        if lineno in seen:
+            return
+        seen.add(lineno)
+        out.append("line %d: %s (inside %s - %s)"
+                    % (lineno, snippet[:80], label, _ADJUDICATE))
+
+    for start, end, kind in bodies:
+        body = ctx.html[start:end]
+        if kind is not None:
+            for m in _FONT_FAMILY_TEXT_RX.finditer(body):
+                add(ctx.lineno_at(start + m.start()), m.group(0).strip(),
+                    _REGION_LABEL[kind])
+            continue
+        for cm in _CSS_COMMENT_RX.finditer(body):
+            for m in _FONT_FAMILY_TEXT_RX.finditer(cm.group(0)):
+                add(ctx.lineno_at(start + cm.start() + m.start()),
+                    m.group(0).strip(), "a CSS comment")
+    body_spans = [(s, e) for s, e, _ in bodies]
+    for m in _FONT_FAMILY_TEXT_RX.finditer(ctx.html):
+        kind = ctx.region_kind_at(m.start())
+        if kind is None:
+            continue
+        if _offset_in_spans(m.start(), body_spans):
+            continue
+        add(ctx.lineno_at(m.start()), m.group(0).strip(), _REGION_LABEL[kind])
+    return _cap(out)
+
+
+@check(14, "every font-family ends in a generic family", "section 6.6")
+def c14(ctx):
+    """section 6.6: every font-family declaration must terminate in a
+    generic family, so the page stays legible with zero network.
+
+    var() IS resolved against Ctx.root_tokens() before judging (a
+    dashboard commonly writes font-family:var(--mono) with the real
+    stack living in :root). An UNRESOLVABLE var() - the custom property
+    is not defined anywhere root_tokens() can see - is NOT proof of a
+    missing fallback: it is reported at WARN, never FAIL. Uncertainty
+    must never invent a defect; see _resolve_font_value.
+
+    Three sites are checked, because section 6.6's requirement binds
+    wherever a font-family value actually lives: a live <style> body's
+    declarations (_live_style_font_declarations - the same body scan
+    and :root/comment masking _non_root_declarations uses, plus an
+    @font-face exemption its own font-family does not need), a live
+    inline style= attribute (_inline_style_font_values - not covered by
+    _non_root_declarations at all), and :root token DEFINITIONS
+    themselves for a token-based design (_is_font_family_token) - a
+    badly-defined token still needs catching even where nothing in this
+    document happens to reference it via var().
+
+    Region-graded like checks 7-13: a font-family mention that exists
+    only inside a CSS comment, a nested/non-live <style> body, a live
+    <script> body's JS text, or an HTML comment is not a live style
+    rule and cannot FAIL - _soft_font_declarations reports it at WARN
+    instead of dropping it.
+
+    Known limitations, tested and disclosed rather than silently
+    assumed away (see the task report): Ctx.root_tokens() is
+    region-blind (built in Task 2, out of scope here) - a :root block
+    that exists only inside an HTML comment or a JS string still feeds
+    the token map, so a bad font token defined ONLY there can produce a
+    false FAIL via the root-token loop, and conversely a live
+    font-family:var(--x) whose --x is defined ONLY in such a commented-
+    out :root resolves and PASSes when the rendered page would actually
+    see --x as undefined. A font-role root token holding a single bare,
+    unquoted, non-generic family name with no comma and no quotes
+    (--font-primary:Arial) is not examined by the root-token loop at
+    all unless referenced elsewhere (see _is_font_family_token)."""
+    name = "every font-family ends in a generic family"
+    rule = "section 6.6"
+    tokens = ctx.root_tokens()
+    problems = []
+    warns = []
+
+    def audit(value, cite):
+        resolved = _resolve_font_value(value, tokens)
+        if not resolved.strip():
+            return  # empty value: not a missing-fallback violation
+        if "var(" in resolved:
+            warns.append("%s: unresolvable var() in stack: %s"
+                        % (cite, value[:60]))
+            return
+        last = resolved.split(",")[-1].strip().strip("'\"").lower()
+        if last not in GENERIC_FAMILIES:
+            problems.append("%s: stack ends in %r, not a generic family"
+                            % (cite, last[:40]))
+
+    for lineno, value in _live_style_font_declarations(ctx):
+        audit(value, "line %d" % lineno)
+
+    for lineno, value in _inline_style_font_values(ctx):
+        audit(value, "line %d (inline style attribute)" % lineno)
+
+    for token, value in tokens.items():
+        if not _is_font_family_token(token, value):
+            continue
+        audit(value, "%s (root token)" % token)
+
+    warns.extend(_soft_font_declarations(ctx))
+    problems = _cap(problems)
+    warns = _cap(warns)
+    if problems:
+        return Result(14, name, rule, FAIL, problems + warns)
+    if warns:
+        return Result(14, name, rule, WARN, warns)
+    return Result(14, name, rule, PASS)
+
+
+def _fonts_link_tags(ctx):
+    """(lineno, url, tag_text) for every LIVE <link> tag whose href
+    points at a known fonts host - the FULL tag text, not just the
+    source line the href happens to render on. A real <link> commonly
+    wraps media=/onload= onto a later physical line (see
+    examples/research_dashboard.html); judging render-blocking
+    behaviour from a single source line, as ctx.lines[lineno-1] alone
+    would, misses attributes that live elsewhere in the same tag and
+    false-FAILs a compliant tag."""
+    out = []
+    for lineno, tag_name, tag_text in _all_tags(ctx):
+        if tag_name != "link":
+            continue
+        m = _REF_ATTR_RX.search(tag_text)
+        if m and _is_font_host(m.group(1)):
+            out.append((lineno, m.group(1), tag_text))
+    return out
+
+
+def _soft_fonts_links(ctx):
+    """(lineno, url, region_kind) for a fonts-host reference that
+    exists only inside a masked region. Not live markup, so it cannot
+    make check 15 FAIL - section 6.6's render-blocking requirement is
+    about what a browser actually loads - but per this project's
+    standing rule a hit is never silently dropped either."""
+    return [(n, u, kind) for n, u, kind in _masked_region_external_refs(ctx)
+            if _is_font_host(u)]
+
+
+def _link_attr_winners(tag_text):
+    """First-occurrence-wins attribute name/value map for one whole
+    <link ...> tag - the same parsing _tag_is_quoted_marked already
+    uses for class/data-quoted, applied here to media/onload/rel.
+    Never a substring search over raw tag text: that cannot distinguish
+    a real media=/onload= attribute from an unrelated attribute's VALUE
+    that merely CONTAINS that text - e.g.
+    title="media='print' onload='x'" - which is exactly the bug class
+    _tag_is_quoted_marked's own docstring documents
+    (title="data-quoted"), reached here through a decoy title/alt/
+    aria-label instead of a decoy class. A checker that can be told
+    "this is non-blocking" by an attribute that ISN'T media= or onload=
+    would let a genuinely render-blocking fonts link ship at exit 0 -
+    the worse of the two failure directions this task warns about."""
+    winners = {}
+    for m in _ATTR_PARSE_RX.finditer(tag_text):
+        attr_name = m.group(1).lower()
+        if attr_name in winners:
+            continue
+        value = m.group(2)
+        if value is None:
+            value = m.group(3)
+        if value is None:
+            value = m.group(4)
+        winners[attr_name] = value
+    return winners
+
+
+def _fonts_link_is_nonblocking(tag_text):
+    """True if a <link> tag's own REAL attributes (via
+    _link_attr_winners, not a raw-text substring search) show the
+    non-blocking swap pattern section 6.6 requires: media="print"
+    paired with an onload= handler (the standard print-media async-CSS
+    trick), or rel="preload" - checked as a whitespace-delimited TOKEN
+    of the rel attribute's value, not a substring, so
+    rel="stylesheet-preload-notice" cannot be mistaken for the real
+    preload keyword (the same fix checks 7/13 made for class/vocabulary
+    tokens)."""
+    winners = _link_attr_winners(tag_text)
+    media = (winners.get("media") or "").strip().lower()
+    has_onload = "onload" in winners
+    rel_tokens = (winners.get("rel") or "").split()
+    return (media == "print" and has_onload) or ("preload" in rel_tokens)
+
+
+@check(15, "fonts stylesheet does not block render", "section 6.6")
+def c15(ctx):
+    """section 6.6: a fonts stylesheet must not block render. Scope is
+    deliberately narrow (this check has nothing to say about anything
+    but a genuine fonts <link>'s own loading behaviour): no external
+    fonts stylesheet at all is PASS with a note that nothing can block;
+    a live fonts <link> FAILs only for missing the non-blocking swap
+    pattern (see _fonts_link_is_nonblocking); a fonts reference found
+    only in a masked region cannot FAIL (not live markup) but is still
+    surfaced at WARN rather than dropped, per this project's standing
+    rule."""
+    name = "fonts stylesheet does not block render"
+    rule = "section 6.6"
+    live = _fonts_link_tags(ctx)
+    soft_raw = _soft_fonts_links(ctx)
+    if not live and not soft_raw:
+        return Result(15, name, rule, PASS,
+                      ["no external fonts stylesheet; nothing can block"])
+    problems = []
+    for lineno, url, tag_text in live:
+        if not _fonts_link_is_nonblocking(tag_text):
+            problems.append(
+                "line %d: %s loads render-blocking; section 6.6 requires "
+                'media="print"+onload swap or rel="preload"'
+                % (lineno, url[:70]))
+    soft = _cap([
+        "line %d: fonts stylesheet %s (inside %s - %s); render-blocking "
+        "status cannot be determined for non-live markup"
+        % (n, u[:70], _REGION_LABEL[kind], _ADJUDICATE)
+        for n, u, kind in soft_raw])
+    if problems:
+        return Result(15, name, rule, FAIL, problems + soft)
+    if soft:
+        return Result(15, name, rule, WARN, soft)
+    return Result(15, name, rule, PASS)
+
+
 @check(16, "output hygiene: DOCTYPE first, </html> last, no prose", "section 8.10")
 def c16(ctx):
     problems = []
@@ -2124,6 +2555,17 @@ INJECTIONS.update({
     13: ("reference-example vocabulary leak",
          _inject_before("</body>", "<p>homelab provisioning notes</p>\n"),
          {13}),
+})
+
+INJECTIONS.update({
+    14: ("font-family with no generic fallback",
+         _inject_before("</style>", "h2{ font-family:'Weird Font'; }\n"),
+         {14}),
+    15: ("render-blocking fonts stylesheet",
+         _inject_before("</head>",
+                        '<link rel="stylesheet" '
+                        'href="https://fonts.googleapis.com/css2?family=X">\n'),
+         {15}),
 })
 
 
