@@ -207,8 +207,11 @@ _JS_CONTROL_PAREN_KEYWORDS = frozenset([
 # position) rather than a block statement. Deliberately excludes '>', so
 # an arrow function body (`x => { ... }`) is read as the block it is, and
 # excludes ';', ')', '}' and '{', after all of which a '{' begins a
-# statement.
-_JS_OBJECT_PREFIX = "=(,:[?+-*/%&|^!~"
+# statement. ':' is NOT here - it is handled separately, because it means
+# opposite things in the two places it appears (see
+# _js_brace_opens_object). '/' is here only because the set is written as
+# "operators"; `a / {` is not valid JS, so that entry is inert.
+_JS_OBJECT_PREFIX = "=(,[?+-*/%&|^!~"
 
 # Keywords after which a '{' opens an object literal (`return { ... }`).
 # Note this is NOT _JS_REGEX_KEYWORDS: `do { ... }` and `else { ... }`
@@ -219,21 +222,35 @@ _JS_OBJECT_KEYWORDS = frozenset([
 ])
 
 
-def _js_brace_opens_object(prev_code_char, last_word, last_word_after_dot):
+def _js_brace_opens_object(prev_code_char, last_word, last_word_after_dot,
+                           open_braces):
     """True if a '{' here opens an object literal (a value, so its '}'
     is followed by division), False if it opens a block statement (so its
     '}' is followed by a fresh statement, where a '/' opens a regex).
 
     Same shape of decision as _js_regex_may_start, and the same
     whole-word, dot-aware keyword handling, so `return {` is a value but
-    `myreturn {`, `obj.return {`, `do {` and `else {` are blocks. A wrong
-    call here is bounded, not silent: it can only flip a later '/'
-    between regex and division, and BOTH outcomes of that flip are now
-    contained to a single physical line (see _scan_js_states)."""
+    `myreturn {`, `obj.return {`, `do {` and `else {` are blocks.
+
+    ':' needs the enclosing context, which is why open_braces (the
+    frame's own brace-kind stack) is passed in. A '{' after ':' is an
+    object literal only when the innermost enclosing '{' is itself an
+    object literal, i.e. the ':' separates a property key from its value
+    (`var o = { meta: { a: 1 } }`). In statement position the same ':'
+    belongs to a label or a switch case, and the '{' after it is a BLOCK
+    (`lbl: { f(); }`, `switch (v) { case 1: { h(); } }`). Reading those
+    as object literals made their '}' claim a value was produced, which
+    made the next '/' read as division.
+
+    This function is advisory. Nothing it returns can change a check's
+    verdict - see c10's docstring - so a wrong call here costs at most an
+    inaccurate note on a cited line."""
     if prev_code_char == "":
         return False
     if prev_code_char in (_JS_AFTER_VALUE, _JS_AFTER_BLOCK):
         return False
+    if prev_code_char == ":":
+        return bool(open_braces) and open_braces[-1]
     if prev_code_char in _JS_OBJECT_PREFIX:
         return True
     if prev_code_char.isalnum() or prev_code_char in "_$":
@@ -302,9 +319,12 @@ def _js_regex_may_start(prev_code_char, last_word, last_word_after_dot):
     else can open a regex literal. Every way JS can end a value is
     accounted for, so this is a grammar rule rather than a sample of
     cases: an identifier or number (the alphanumeric branch below), a
-    closing ']', a call or grouping ')' or an object literal's '}' (both
-    arrive here as _JS_AFTER_VALUE), a closed string/template/regex
-    literal (also _JS_AFTER_VALUE), and a postfix '++'/'--' (likewise).
+    closing ']', a trailing '.' ending a numeric literal (`1. / 2`), a
+    call or grouping ')' or an object literal's '}' (both arrive here as
+    _JS_AFTER_VALUE), a closed string/template/regex literal (also
+    _JS_AFTER_VALUE), and a postfix '++'/'--' (likewise). A '.' is never
+    followed by a regex in valid JS - `obj. /re/` is a syntax error - so
+    treating it as a value-ender is safe in both directions.
 
     Neither '}' nor ')' appears in the "always division" set below,
     because neither is always a value: `if (x) { f(); }` and `if (x)`
@@ -353,7 +373,7 @@ def _js_regex_may_start(prev_code_char, last_word, last_word_after_dot):
         return True
     if prev_code_char == _JS_AFTER_VALUE:
         return False
-    if prev_code_char == "]":
+    if prev_code_char in "].":
         return False
     if prev_code_char.isalnum() or prev_code_char in "_$":
         return not last_word_after_dot and last_word in _JS_REGEX_KEYWORDS
@@ -379,20 +399,26 @@ def _scan_js_states(text):
     apostrophe in `someFunc("don't")` stays inside that double-quoted
     string and never affects anything that follows it.
 
+    THIS SCANNER IS ADVISORY. Its output annotates findings; it may not
+    suppress or downgrade one. Callers must not use it to drop a match
+    from a count - see c10's docstring for the five review rounds that
+    established this rule the expensive way. No hand-written lexer inside
+    a single-file checker resolves JS regex-vs-division for every input,
+    so any design that lets this function veto a finding converts a lexer
+    bug into a false PASS on a real violation. Given it cannot veto, its
+    remaining job is to be RIGHT AS OFTEN AS POSSIBLE so its notes are
+    worth reading - which is what everything below is for.
+
     Includes keyword lookback for the regex/division rule (`return
     /x/.test(s)` vs `count / 2`) and a structural block-vs-object-literal
     distinction for '}' - see _js_regex_may_start, _js_brace_opens_object
-    and last_word below. A miscall there is a real bug, not a safe
-    default in either direction - misreading a live '/' as a regex-open
-    swallows real code as non-code state, which is exactly the
-    false-negative failure mode this scanner exists to remove (a live MAP
-    assignment demoted to WARN/PASS instead of FAILing).
+    and last_word below.
 
     Because no context-free scanner resolves regex-vs-division for every
-    input, correctness here does NOT rest on that disambiguation being
+    input, note quality here does NOT rest on that disambiguation being
     complete. It rests on four CONTAINMENT rules, each a hard JavaScript
-    language rule rather than a heuristic, that bound what a miscall can
-    cost:
+    language rule rather than a heuristic, that bound how far a miscall
+    can spread:
 
       1. A '...' or "..." string may not contain a raw newline. Reaching
          one means this scanner mis-entered that state, so the span is
@@ -416,18 +442,23 @@ def _scan_js_states(text):
          so it too is relabelled as live code rather than allowed to
          swallow the tail of the script.
 
-    Together these give the invariant this check depends on: at the first
-    character of every physical line the scanner is in code, a template
-    literal, or a block comment - and the latter two can only be ENTERED
-    from code state, at a '`' or '/*' that rule 3 has already vetted. A
-    regex/division miscall can therefore lose at most part of one line,
-    and the parts it does lose are relabelled toward "live" rather than
+    Together these mostly keep the scanner resynchronised at line
+    boundaries, so a regex/division miscall usually costs at most part of
+    one line and what it costs is relabelled toward "live" rather than
     away from it.
 
-    Automatic-semicolon-insertion remains out of scope, and cannot
-    reproduce the failure class: ASI misplaces STATEMENT boundaries, not
-    string/regex state, and `var x = a` / newline / `/['"]/.test(y)` -
-    the ASI-flavoured shape of this bug - is already handled by rule 1.
+    These rules are NOT airtight, and no claim here should be read as
+    saying they are. Rule 3 only arms when a same-line closing '/' exists
+    and only guards '`' and '/*', so a quote inside a misjudged span can
+    still pair with another quote MID-LINE - which rule 1, firing only at
+    a newline, never sees. Rule 3's span also stops one character short of
+    the candidate closing '/', so a '/*' formed at that boundary is
+    unguarded. Both were demonstrated against real, executing JavaScript
+    after four rounds of fixes here. They remain because the fix for them
+    is not a fifth round of lexing: it is that no caller may act on this
+    scanner's opinion as a verdict.
+
+    Automatic-semicolon-insertion also remains out of scope.
 
     last_code_char and last_word are updated on every code character AND
     at every point a string, template literal, regex literal or brace
@@ -582,7 +613,7 @@ def _scan_js_states(text):
                 continue
             elif ch == "{":
                 top[1].append(_js_brace_opens_object(
-                    last_code_char, last_word, last_word_after_dot))
+                    last_code_char, last_word, last_word_after_dot, top[1]))
                 last_word = ""
                 last_word_after_dot = False
             elif ch == "}":
@@ -796,14 +827,21 @@ class Ctx:
         inside any <script> body found by a raw scan of self.html (see
         _SCRIPT_TAG_RX).
 
+        ADVISORY ONLY. Use this to explain a finding, never to drop one.
+        A caller that lets a non-_JS_CODE answer remove a match from a
+        count converts any lexer bug into a false PASS on a real
+        violation - which happened five times in five review rounds
+        before c10 was rewritten to strip this function of that power.
+        See c10 and _scan_js_states for the full reasoning.
+
         Backed by _scan_js_states, a real per-body character-level
         tokenizer - not a per-line heuristic - so a match's
         classification cannot be changed by unrelated text elsewhere on
         the same line the way counting quote characters could. Computed
         lazily and cached once per body: more than one check needs this
-        (check 10's MAP-assignment count here; Task 5's reference-word
-        checks are expected to reuse it rather than re-deriving their own
-        JS-awareness)."""
+        (check 10's advisory notes here; Task 5's reference-word checks
+        are expected to reuse it rather than re-deriving their own
+        JS-awareness - on the same advisory-only terms)."""
         if self._js_states is None:
             self._js_states = {}
         for m in _SCRIPT_TAG_RX.finditer(self.html):
@@ -1291,6 +1329,38 @@ def _script_bodies(ctx):
 
 @check(10, "exactly one MAP object assignment", "section 8.2")
 def c10(ctx):
+    """section 8.2: exactly one MAP object literal.
+
+    THE JS LEXER IS ADVISORY HERE AND HAS NO VETO. Two or more MAP
+    assignments inside live <script> bodies is always a FAIL, whatever
+    Ctx.js_state_at thinks of them; the lexer's opinion is appended to
+    each cited line as a note the reader can act on.
+
+    This is deliberate and was paid for. An earlier version let
+    js_state_at DOWNGRADE a finding - a match it called "inside a JS
+    string/comment/regex" was dropped from the count - to avoid
+    false-FAILing on a `MAP =` written inside a comment. Five separate
+    lexer defects, over five review rounds, each turned a real second
+    assignment into "not live" and shipped WARN with exit 0: a false PASS
+    on the exact violation this check exists to catch. Each fix was
+    correct and the next reviewer found the same failure through a new
+    mechanism, because no hand-written lexer inside a single-file checker
+    resolves JS regex-vs-division for every input.
+
+    Removing the veto removes the failure class by construction rather
+    than by another round of disambiguation: a lexer error can now only
+    make a note wrong, never make a verdict wrong. The cost is a false
+    FAIL when a page really does carry a commented-out `MAP =` beside
+    the live one - one glance at a cited line that already says which
+    line and why. That is the cheap direction; a shipped violation with
+    exit 0 is not.
+
+    The REGION-masking layer (_mask_non_markup, via _script_bodies and
+    region_kind_at) keeps its veto and is unchanged. A `MAP =` inside an
+    HTML comment, or inside a <script> tag that itself only exists in a
+    comment or a JS string, still reports at WARN. That layer is
+    markup-level, has been stable across every round of this task, and is
+    not implicated in any of the defects above."""
     name = "exactly one MAP object assignment"
     rule = "section 8.2"
     bodies = _script_bodies(ctx)
@@ -1306,14 +1376,21 @@ def c10(ctx):
             abs_off = start + m.start()
             lineno = ctx.lineno_at(abs_off)
             if kind is not None:
+                # masked-region veto: retained, see the docstring
                 soft_note(lineno, _REGION_LABEL[kind])
                 continue
+            # Live <script> body. The match counts. js_state_at may only
+            # annotate it.
             js_state = ctx.js_state_at(abs_off)
-            if js_state is None or js_state == _JS_CODE:
-                live_hits.append((lineno, m.group(0)))
-            else:
-                soft_note(lineno, _JS_STATE_LABEL.get(
-                    js_state, "a JS comment or string"))
+            label = _JS_STATE_LABEL.get(js_state)
+            text = m.group(0)
+            if label is not None:
+                # Advisory only. Kept short deliberately: line_details
+                # truncates at 120 characters, and a note that gets cut
+                # off is worse than a terse one.
+                text = "%s (note: lexer reads this as inside %s - " \
+                    "advisory, not a verdict)" % (text, label)
+            live_hits.append((lineno, text))
     # a bare "MAP =" mention sitting directly inside an HTML comment,
     # with no enclosing <script> tag at all
     body_spans = [(s, e) for s, e, _ in bodies]
@@ -1329,15 +1406,10 @@ def c10(ctx):
             else Result(10, name, rule, PASS)
     if not live_hits:
         if soft:
-            # js_state_at is a real tokenizer, not a heuristic, so this
-            # path should be rare - but it is not a full JS parser, and
-            # no context-free scanner resolves regex-vs-division for
-            # every input (see _js_regex_may_start and the containment
-            # rules in _scan_js_states), so a residual miscall is still
-            # possible. Zero confirmed-live hits alongside something
-            # MAP-shaped is not the same claim as zero assignments
-            # existing at all; WARN and let a human look, rather than
-            # FAIL a page that may be fine.
+            # Every MAP-shaped match was vetoed by the MARKUP-region
+            # layer, not by the JS lexer. "Nothing live found alongside
+            # something MAP-shaped in a comment" is not the same claim as
+            # "no assignment exists"; WARN and let a human look.
             return Result(10, name, rule, WARN, soft)
         return Result(10, name, rule, FAIL,
                       ["no MAP object assignment found"])
@@ -1598,6 +1670,16 @@ INJECTIONS.update({
     # This strengthens the input so a future regression in any of the
     # five mechanisms trips the self-test; it does not change what the
     # injection is supposed to prove, so the expected set stays {10}.
+    #
+    # Since check 10's lexer became advisory (see c10), the duplicate
+    # assignment below trips the check on the RAW COUNT, and would do so
+    # even if all five shapes above were mis-lexed. That is the point -
+    # the payload is now a regression guard on the accuracy of the
+    # advisory notes rather than on whether the violation is caught at
+    # all, and it is deliberately kept for that. The expected set is
+    # still {10}, and the self-test grades by severity worsening against
+    # the baseline (_tripped), so this injection's PASS -> FAIL counts as
+    # a trip exactly as its earlier PASS -> WARN -> FAIL did.
     10: ("second MAP object assignment, on lines combining a "
          "string-then-division token, an apostrophe-bearing string, "
          "a nested-template-interpolation regex literal, a "
