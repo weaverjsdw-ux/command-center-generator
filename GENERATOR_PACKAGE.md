@@ -259,6 +259,17 @@ A second map from a different domain pasted into this prompt must produce a cohe
 
 Run this against your generated file. If any check fails, fix and re-check; do not return a failing file.
 
+Then emit your results as the final line inside the document, immediately before
+the closing `</html>` tag:
+
+    <!-- SELF-CHECK: 1=pass 2=pass 3=pass 4=pass 5=pass 6=pass 7=pass 8=pass 9=pass 10=pass -->
+
+One entry per numbered check below (1-10), in order. Permitted values:
+`pass`, `fail`, `n/a` — use `n/a` only where the rule genuinely does not
+apply to this map, never in place of `fail`. Report what you actually
+found. A claim of `pass` on a check that a reader can demonstrate fails
+is itself a defect, and a more serious one than the failure it conceals.
+
 1. **Standalone — constructive render-trace (not a grep).** Trace the file as a browser would under `file://`: (a) every `<script>` has inline content or is one of the allowed inlined-runtime blocks — list each script and its source; (b) NO `<script type="module">`, ES `import`/`export`, dynamic `import()`, local `fetch`/`XHR`, or top-level `await`; (c) any JSX has an inlined Babel-standalone + `type="text/babel"`; (d) the root render call runs after its runtime is defined in document order; (e) zero external local file references. If you cannot affirmatively trace all five, rewrite in vanilla JS before returning.
 2. **Data single-source-of-truth.** Exactly one `MAP` object; Brief/Board/Analysis/Queue/Matrix/Ladder/DAG all derive from it — asset data not restated as separate per-tab literals.
 3. **Style single-source-of-truth.** All colors/spacing/rule-widths are CSS custom properties in one `:root` table, referenced via `var(--token)`; no hardcoded hex or repeated literal outside `:root`; posture→color and risk-tones reference tokens.

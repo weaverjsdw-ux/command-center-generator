@@ -795,6 +795,28 @@ class Ctx:
         self._masked = None
         self._regions = None
         self._js_states = None
+        self._check_cache = {}
+
+    def result_for(self, num, fn):
+        """Run check `num`'s function against this Ctx and cache the
+        Result, so a caller that needs another check's verdict - check
+        18, comparing the model's own attestation against what every
+        other check actually found - does not re-run that check's own
+        document scan (masking, tag scanning, MAP parsing, redaction)
+        a second time. run_checks() below routes every check through
+        this method, so by the time check 18 runs (registered last,
+        after 1-17) their results are already cached; a caller that
+        invokes a check function directly without going through
+        run_checks first still gets a correct answer, just computed
+        on demand instead of reused.
+
+        Cached per-Ctx instance only, never at module scope: --self-test
+        constructs a fresh Ctx per fixture variant (see _statuses), so
+        nothing cached here can leak a result from one document into a
+        check run against a different one."""
+        if num not in self._check_cache:
+            self._check_cache[num] = fn(self)
+        return self._check_cache[num]
 
     def masked_html(self):
         """self.html with non-markup regions blanked out (see
@@ -3229,6 +3251,122 @@ def c17(ctx):
 
 
 # --------------------------------------------------------------------------
+# check 18: section 8 self-check attestation vs. actual results
+# --------------------------------------------------------------------------
+
+# Maps each of section 8's ten numbered self-check items (GENERATOR_
+# PACKAGE.md section 8) to the verifier check number(s) that mechanically
+# cover it. Built from the rule strings every other @check() above
+# already declares - "section 8.N" appears on checks 10-13, 16 and 17;
+# "section 8.1" appears alongside "section 7" on check 1, and checks
+# 2-9 cover section 8.1's other render-trace sub-clauses through their
+# own "section 7" rule. Items 8 and 9 map to an empty list on purpose:
+# messy-input handling (8) and DAG correctness (9) are both runtime
+# behavior, not something a static scan of the returned HTML text can
+# adjudicate - the same reasoning NOT_CHECKED records for them above.
+# A rule with no covering check can be neither confirmed nor
+# contradicted by this tool, and check 18 below must say exactly that
+# rather than assume either way.
+SECTION_8_COVERAGE = {
+    1: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    2: [10],
+    3: [11],
+    4: [17],
+    5: [17],
+    6: [12],
+    7: [13],
+    8: [],   # messy-input handling: runtime behavior, not mechanically checkable
+    9: [],   # DAG correctness: runtime behavior, not mechanically checkable
+    10: [16],
+}
+
+
+def _attestation(html):
+    """Parse the model's claimed section 8 results from its own
+    SELF-CHECK comment (see GENERATOR_PACKAGE.md section 8's amended
+    preamble). Returns None if the document carries no such comment at
+    all - the file predates the attestation requirement, or the model
+    dropped it, and there is no claim to adjudicate. Returns {} if a
+    SELF-CHECK comment exists but no `N=value` entry inside it parsed -
+    a malformed block, distinct from no block at all. Otherwise returns
+    {rule number: claimed value}, value one of "pass", "fail", "n/a"
+    (lowercased). Distinguishing None from {} is what lets check 18 tell
+    a missing requirement (SKIP) apart from a present-but-garbled one
+    (WARN)."""
+    m = re.search(r"<!--\s*SELF-CHECK\s*:(.*?)-->", html, re.S | re.I)
+    if m is None:
+        return None
+    claims = {}
+    for num, value in re.findall(r"(\d+)\s*=\s*(pass|fail|n/a)", m.group(1), re.I):
+        claims[int(num)] = value.lower()
+    return claims
+
+
+@check(18, "self-check attestation matches actual results", "section 8 preamble")
+def c18(ctx):
+    """section 8 preamble: the model is required to run section 8's ten
+    checks itself and emit its results as a SELF-CHECK comment just
+    inside </html>. This check does not re-derive whether the DASHBOARD
+    is correct - checks 1-17 already do that - it derives whether the
+    MODEL'S OWN CLAIM about those results was honest.
+
+    One-directional by design: a claimed "pass" on a section 8 rule this
+    tool can mechanically cover, where the covering check(s) actually
+    FAILed, is a misreport - a second, distinct defect layered on top of
+    the underlying failure. Both are reported: the underlying check
+    FAILs on its own line (it runs independently either way), and check
+    18 FAILs separately, naming the misreport. A claimed "fail" where
+    the covering checks all passed is the model being conservative about
+    its own work, not a defect, and is not reported as a problem here. A
+    rule with no covering check (section 8.8, 8.9) can be neither
+    confirmed nor contradicted, so a claim on it is recorded as
+    unadjudicated rather than silently treated as either true or false -
+    same for a rule the block simply never mentions.
+
+    Reuses ctx.result_for() rather than calling each other check's
+    function directly, so a normal run_checks() pass - which already
+    computes every check through the same cache - does the expensive
+    part (document masking, tag scanning, MAP parsing, redaction) only
+    once even though this check asks about all seventeen other
+    results."""
+    name = "self-check attestation matches actual results"
+    rule = "section 8 preamble"
+    claims = _attestation(ctx.html)
+    if claims is None:
+        return Result(18, name, rule, SKIP,
+                      ["no SELF-CHECK block; file predates the section 8 "
+                       "attestation requirement"])
+    if not claims:
+        return Result(18, name, rule, WARN,
+                      ["SELF-CHECK block present but no parseable entries"])
+    others = {}
+    for num, _, _, fn in CHECKS:
+        if num == 18:
+            continue
+        others[num] = ctx.result_for(num, fn).status
+    misreports, unadjudicated = [], []
+    for rule_num, covering in sorted(SECTION_8_COVERAGE.items()):
+        claimed = claims.get(rule_num)
+        if claimed is None:
+            unadjudicated.append("section 8.%d: no claim emitted" % rule_num)
+            continue
+        if not covering:
+            unadjudicated.append(
+                "section 8.%d: claimed %s, not mechanically checkable"
+                % (rule_num, claimed))
+            continue
+        failed = [n for n in covering if others.get(n) == FAIL]
+        if claimed == "pass" and failed:
+            misreports.append(
+                "misreported section 8.%d: claimed pass, checks %s failed"
+                % (rule_num, failed))
+    details = misreports + unadjudicated
+    if misreports:
+        return Result(18, name, rule, FAIL, details)
+    return Result(18, name, rule, PASS, unadjudicated[:6])
+
+
+# --------------------------------------------------------------------------
 # self-test
 # --------------------------------------------------------------------------
 
@@ -3420,9 +3558,27 @@ INJECTIONS.update({
          {17}),
 })
 
+INJECTIONS.update({
+    # Claims every section 8 rule passed, INCLUDING section 8.1, while
+    # also flipping the fixture's own <script> to type="module" - which
+    # breaks check 1, one of section 8.1's covering checks (see
+    # SECTION_8_COVERAGE). Two distinct defects, two expected trips: the
+    # underlying violation (1) and the misreport that claimed it away
+    # (18). Neither the injected block's own rules 2-10 nor the fixture
+    # otherwise change, so nothing else should trip.
+    18: ("SELF-CHECK attestation claims section 8.1 passed while check 1 "
+         "(one of section 8.1's covering checks) is made to fail",
+         lambda html: html.replace(
+             "</html>",
+             "<!-- SELF-CHECK: 1=pass 2=pass 3=pass 4=pass 5=pass "
+             "6=pass 7=pass 8=pass 9=pass 10=pass -->\n</html>", 1
+         ).replace("<script>", '<script type="module">', 1),
+         {1, 18}),
+})
+
 
 def run_checks(ctx):
-    return [fn(ctx) for _, _, _, fn in CHECKS]
+    return [ctx.result_for(num, fn) for num, _, _, fn in CHECKS]
 
 
 _SEVERITY = {PASS: 0, SKIP: 0, WARN: 1, FAIL: 2}
