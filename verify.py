@@ -1552,9 +1552,52 @@ REFERENCE_VOCAB = ["homelab", "provisioning", "backup", "restore", "dotfiles",
                    "monitoring", "showcase", "adoption-reality", "community pull"]
 
 
-_QUOTED_OPEN_RX = re.compile(
-    r"""<(\w+)[^>]*(?:class\s*=\s*['"][^'"]*\bquoted\b[^'"]*['"]"""
-    r"""|data-quoted)[^>]*>""", re.I)
+# One attribute: NAME, optionally followed by ='...' / ="..." / =bare-value.
+# Quote-aware in the same shape _ATTR_RUN already uses elsewhere in this
+# file, so a quoted VALUE is captured whole rather than scanned as raw
+# text - see _tag_is_quoted_marked for why that distinction matters here.
+_ATTR_PARSE_RX = re.compile(
+    r"""([^\s"'=<>`/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?""")
+
+
+def _tag_is_quoted_marked(tag_text):
+    """True if tag_text - one WHOLE opening tag, already matched via the
+    quote-aware _TAG_RX/_ATTR_RUN shape - genuinely carries the
+    quoted-region marking: a class attribute whose value contains
+    "quoted" as one of its whitespace-delimited TOKENS (not merely as a
+    substring - "quoted-tag" and "unquoted" must not count), or an
+    attribute literally NAMED data-quoted (its value, if any, is
+    irrelevant - a bare boolean-style data-quoted with no '=' still
+    counts).
+
+    This replaces an earlier, defective detector that scanned raw tag
+    text with `[^>]*` for the SUBSTRING "class=...quoted..." or
+    "data-quoted" anywhere in the tag - which does not distinguish an
+    actual attribute from an unrelated attribute's VALUE that merely
+    contains that text. `<div title="data-quoted">` and
+    `<div title="use class='quoted' for this">` both matched the old
+    detector, so _strip_quoted blanked the whole element and silently
+    dropped any live CTA verb inside it - the same "tool goes quiet"
+    failure class the EOF-fallback fix addressed, reached through a
+    different path in the same check. Because tag_text was already
+    parsed quote-aware by the caller, an attribute VALUE containing
+    those substrings is correctly seen as just a value, never mistaken
+    for markup, by iterating actual name/value pairs instead of
+    substring-matching the raw tag text."""
+    for m in _ATTR_PARSE_RX.finditer(tag_text):
+        name = m.group(1).lower()
+        if name == "data-quoted":
+            return True
+        if name == "class":
+            value = m.group(2)
+            if value is None:
+                value = m.group(3)
+            if value is None:
+                value = m.group(4)
+            if value and "quoted" in value.lower().split():
+                return True
+    return False
+
 
 # Detects the spec's REAL quoted-region convention as well as the static
 # attribute this file can actually resolve. GENERATOR_PACKAGE.md section 3
@@ -1600,8 +1643,8 @@ def _find_matching_close(html, tag_name, search_from):
     of this function wrongly copied that behavior by analogy. The
     analogy does not hold: <script> and <style> are HTML5 raw-text
     elements, so an unterminated one genuinely does consume the rest of
-    the document in a browser. A <div>, or any other generic tag
-    _QUOTED_OPEN_RX can match, is not a raw-text element - unclosed
+    the document in a browser. A <div>, or any other generic tag a
+    quoted-region marker can appear on, is not a raw-text element - unclosed
     markup still renders its siblings and everything after it as normal,
     visible DOM. Blanking to end-of-document on a single missing closing
     tag silently dropped every real CTA-verb hit after it from the
@@ -1631,8 +1674,10 @@ def _find_matching_close(html, tag_name, search_from):
 
 
 def _strip_quoted(html):
-    """Remove elements statically marked as quoted (class="quoted" or
-    data-quoted). Returns (text, static_markup_found).
+    """Remove elements genuinely, attribute-wise marked as quoted
+    (a class attribute carrying "quoted" as a whitespace-delimited
+    token, or an attribute literally named data-quoted). Returns
+    (text, static_markup_found).
 
     Blanking is offset-preserving - the same idiom _mask_non_markup uses
     via _blank_run - so a matched quoted element's characters (including
@@ -1644,6 +1689,24 @@ def _strip_quoted(html):
     misattribute region and cite the wrong line for anything downstream of
     a multi-line quoted block.
 
+    Candidate opening tags come from _TAG_RX - the SAME quote-aware,
+    document-wide tag matcher checks 6-9 already use - not a bespoke
+    substring scan. Each candidate is then tested by
+    _tag_is_quoted_marked, which parses its actual attribute name/value
+    pairs rather than substring-matching the tag's raw text. An earlier
+    revision matched `class\\s*=...quoted...|data-quoted` as a raw
+    substring anywhere in `[^>]*` tag text, which cannot distinguish a
+    real attribute from an unrelated attribute's VALUE that merely
+    contains that text - `<div title="data-quoted">` or
+    `<div title="use class='quoted' for this">` both satisfied it,
+    causing _strip_quoted to blank the whole element and silently drop
+    any live CTA verb inside - a hit-loss bug, not merely an
+    over-broad one, since check 12 is WARN-only and a dropped hit never
+    surfaces at all. Every ambiguous or unparseable case must resolve
+    toward NOT stripping (so the text stays live and gets reported),
+    never toward stripping on a guess - the same governing principle
+    _find_matching_close's EOF fallback already applies.
+
     Nesting-aware via _find_matching_close - see its docstring for why a
     non-greedy same-tag regex is wrong the moment a quoted element
     contains a same-named child element.
@@ -1652,30 +1715,33 @@ def _strip_quoted(html):
     the converse. See c12 for why "nothing static found here" stopped
     being treated as "nothing is quoted" - static_markup_found is kept
     only as a minor, best-effort signal, not a verdict input."""
-    if not re.search(r"""(?:class\s*=\s*['"][^'"]*\bquoted\b|data-quoted)""",
-                     html, re.I):
-        return html, False
     pieces = []
     kept = 0
     scan = 0
+    found_any = False
     # No "already inside a previously-stripped span" guard is needed here:
-    # scan and kept are always advanced together to the same close_end, so
-    # each search starts exactly where the previous stripped span ended,
-    # and re.search(html, scan) cannot return a match starting before
-    # scan. A nested quoted-marked element inside an already-stripped
-    # outer span (e.g. <div class="quoted"><span class="quoted">...) is
-    # therefore never independently found at all - it is already behind
-    # the search cursor, consumed as part of the outer element's own
-    # depth-tracked strip - so there is nothing left to double-process.
-    # (An earlier revision carried a dead `if m.start() < kept` branch
-    # that could never fire under this invariant; removed rather than
-    # left as an ambiguous guard against a case that cannot occur.)
-    for m in iter(lambda: _QUOTED_OPEN_RX.search(html, scan), None):
+    # scan and kept are always advanced together to the same close_end
+    # (or to m.end() for a candidate that turns out not to be genuinely
+    # quoted-marked), so each search starts exactly where the previous
+    # decision left off, and re.search(html, scan) cannot return a match
+    # starting before scan. A nested quoted-marked element inside an
+    # already-stripped outer span (e.g. <div class="quoted"><span
+    # class="quoted">...) is therefore never independently found at all -
+    # it is already behind the search cursor, consumed as part of the
+    # outer element's own depth-tracked strip - so there is nothing left
+    # to double-process.
+    for m in iter(lambda: _TAG_RX.search(html, scan), None):
+        if not _tag_is_quoted_marked(m.group(0)):
+            scan = m.end()
+            continue
+        found_any = True
         close_end = _find_matching_close(html, m.group(1), m.end())
         pieces.append(html[kept:m.start()])
         pieces.append(_blank_run(html[m.start():close_end]))
         kept = close_end
         scan = close_end
+    if not found_any:
+        return html, False
     pieces.append(html[kept:])
     return "".join(pieces), True
 
