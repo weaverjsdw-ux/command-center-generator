@@ -2895,6 +2895,27 @@ def c17(ctx):
     VALUE is itself a string, and blanking every string indiscriminately
     would erase real data along with decoy data.
 
+    Redaction alone was not the whole gap: neither code_rx nor the rank
+    search anchored the LEFT edge of its keyword, so a live field whose
+    name merely ENDS in "code" or "rank" - ordinary object-literal
+    syntax, nothing for _redact_map_text to blank - matched exactly like
+    the real thing. Confirmed independently: `xcode:"INF-1"` (in the
+    renamed entry, or in an entirely different real entry) made this
+    check PASS the same renamed-INF-1 dashboard above, and a live
+    `xrank:2` sitting beside a tampered real `rank:99` did the same for
+    the rank half. `re.search(r"rank...")` and unanchored `code_rx` both
+    match ANY occurrence of that substring regardless of what precedes
+    it - ``\bcode\b`` would not have helped, since ``\b`` only requires
+    a transition between a word character and a non-word character, and
+    both 'x' and 'c' in "xcode" are word characters with no transition
+    between them at all. Fixed with a negative lookbehind,
+    ``(?<![\\w$])``, on both patterns - '$' included deliberately
+    because it is a legal JS identifier character ``\\w`` does not
+    cover. Survived five rounds of break-it testing because every prior
+    construction
+    used the literal whole word "code" or "rank," never a key that
+    merely contains it as a suffix.
+
     Codes/ranks invariant: exp["ranks"] is what the loop below actually
     checks per code, so a fixture listing a code in "codes" without a
     matching entry in "ranks" would let that ONE code's own removal from
@@ -3015,8 +3036,25 @@ def c17(ctx):
         # quotes, but nothing about being a faithful dashboard requires
         # that specific style, so a single-quoted code: field must still
         # count as this code's one true owner, not zero.
+        # (?<![\w$]) anchors the field-name keyword against an
+        # identifier boundary on its LEFT side - '$' is included
+        # deliberately because it is a legal JS identifier character
+        # word\b/\W alone do not treat as one (r"\bcode\b" would still
+        # match the tail of "xcode", since \b only requires a
+        # transition between \w and non-\w, and 'x' and 'c' are both
+        # \w - there is no transition at all between them). Without
+        # this, any live field whose name merely ENDS in "code" (an
+        # ordinary identifier like `xcode`, sitting in plain object-
+        # literal syntax with nothing to redact) matched exactly like a
+        # real `code:` field - confirmed on examples/demo_dashboard.html:
+        # renaming the real code:"INF-1" to "YYY-1" and adding a live
+        # `xcode:"INF-1"` field, in either the same entry or a different
+        # one, made this check PASS a dashboard whose real INF-1 entry no
+        # longer owned a code: field. Survived five rounds of break-it
+        # testing because every prior construction used the literal
+        # whole word "code", never a key that merely contains it.
         esc = re.escape(code)
-        code_rx = re.compile(r'code\s*:\s*(?:"%s"|\'%s\')' % (esc, esc))
+        code_rx = re.compile(r'(?<![\w$])code\s*:\s*(?:"%s"|\'%s\')' % (esc, esc))
         owner_idx = []
         for idx, raw_e in enumerate(raw_entries):
             red_e = redacted_entries[idx]
@@ -3031,7 +3069,13 @@ def c17(ctx):
                 "%s has its own code: field in %d MAP entries "
                 "(expected exactly 1); its rank cannot be trusted"
                 % (code, len(owner_idx)))
-        elif not re.search(r"rank\W+%d\b" % rank, redacted_entries[owner_idx[0]]):
+        # Same (?<![\w$]) anchor, same reason: unanchored, a live
+        # `xrank:2` field (nothing to redact - it is ordinary code) would
+        # satisfy this search exactly as a real `rank:2` would, because
+        # "rank" is a literal substring of "xrank" and re.search does not
+        # care what precedes a match unless told to.
+        elif not re.search(r"(?<![\w$])rank\W+%d\b" % rank,
+                           redacted_entries[owner_idx[0]]):
             problems.append("%s is not recorded at rank %d" % (code, rank))
     # Deliberately checked against ctx.html RAW - never body, never
     # redacted. The banner is not code check 17 needs to disbelieve; it
