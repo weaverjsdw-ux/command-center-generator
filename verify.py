@@ -155,14 +155,30 @@ _JS_STATE_LABEL = {
 }
 
 
-# Sentinel for last_code_char: "a value (string, template literal, or
-# regex literal) was JUST produced here" - as opposed to last_code_char
-# holding an actual source character. A '/' right after a produced value
-# is division (`"a" / 2`, `` `a` / 2 ``, `/x/ / 2`), exactly like a '/'
-# right after an identifier, number, or closing bracket/paren already is.
+# Sentinel for last_code_char: "a value was JUST produced here" - as
+# opposed to last_code_char holding an actual source character. Used for
+# a closed string, template literal or regex literal, for an object
+# literal's or interpolation's '}', for a call or grouping ')', and for a
+# postfix '++'/'--'. A '/' right after any produced value is division
+# (`"a" / 2`, `` `a` / 2 ``, `/x/ / 2`, `f() / 2`, `{a:1} / 2`,
+# `i++ / 2`), exactly like a '/' right after an identifier or number.
 # Never equal to any real character _scan_js_states can see, so it can't
 # collide with one.
 _JS_AFTER_VALUE = "\x00"
+
+# Sentinel for last_code_char: "a statement-structure delimiter just
+# closed here, and the next token is in fresh expression position" - a
+# BLOCK statement's '}' (`if (x) { ... }`, `for (...) { ... }`,
+# `function f(){ ... }`) or a CONTROL clause's ')' (`if (x)`,
+# `while (x)`). Both are the opposite of _JS_AFTER_VALUE: no value was
+# produced, so a '/' immediately after opens a REGEX LITERAL, not a
+# division. Treating every '}' (and every ')') as a closed value was a
+# real false-negative source - `/['"]/.test(z)` after a block close was
+# read as division, leaving the quote inside it to open a runaway string
+# that swallowed live code below it. Which kind of '{' or '(' is being
+# closed is tracked structurally, on the frame's own brace and paren
+# stacks - see _js_brace_opens_object and _scan_js_states.
+_JS_AFTER_BLOCK = "\x01"
 
 
 # Keywords after which a '/' is grammatically a regex literal, not
@@ -173,8 +189,108 @@ _JS_AFTER_VALUE = "\x00"
 # is a property access, not the `in` operator.
 _JS_REGEX_KEYWORDS = frozenset([
     "return", "typeof", "instanceof", "in", "of", "new", "delete",
-    "void", "throw", "case", "do", "else", "yield", "await",
+    "void", "throw", "case", "do", "else", "yield", "await", "default",
 ])
+
+# Keywords whose '(' opens a CONTROL clause rather than a call or a
+# grouping. The difference is what a '/' immediately after the matching
+# ')' means: after `if (x)` / `while (x)` / `for (...)` a regex literal
+# may start (`if (a) /x/.test(b);`), but after a call or a parenthesised
+# value (`f() / 2`, `(a + b) / 2`) the ')' closed a VALUE and the '/' is
+# division. Resolved structurally on the frame's own paren stack, the
+# same way '{' is - see _scan_js_states.
+_JS_CONTROL_PAREN_KEYWORDS = frozenset([
+    "if", "for", "while", "switch", "catch", "with",
+])
+
+# Characters after which a '{' opens an OBJECT LITERAL (an expression
+# position) rather than a block statement. Deliberately excludes '>', so
+# an arrow function body (`x => { ... }`) is read as the block it is, and
+# excludes ';', ')', '}' and '{', after all of which a '{' begins a
+# statement.
+_JS_OBJECT_PREFIX = "=(,:[?+-*/%&|^!~"
+
+# Keywords after which a '{' opens an object literal (`return { ... }`).
+# Note this is NOT _JS_REGEX_KEYWORDS: `do { ... }` and `else { ... }`
+# take a BLOCK, even though both permit a regex literal after them.
+_JS_OBJECT_KEYWORDS = frozenset([
+    "return", "typeof", "instanceof", "in", "of", "new", "delete",
+    "void", "throw", "case", "yield", "await",
+])
+
+
+def _js_brace_opens_object(prev_code_char, last_word, last_word_after_dot):
+    """True if a '{' here opens an object literal (a value, so its '}'
+    is followed by division), False if it opens a block statement (so its
+    '}' is followed by a fresh statement, where a '/' opens a regex).
+
+    Same shape of decision as _js_regex_may_start, and the same
+    whole-word, dot-aware keyword handling, so `return {` is a value but
+    `myreturn {`, `obj.return {`, `do {` and `else {` are blocks. A wrong
+    call here is bounded, not silent: it can only flip a later '/'
+    between regex and division, and BOTH outcomes of that flip are now
+    contained to a single physical line (see _scan_js_states)."""
+    if prev_code_char == "":
+        return False
+    if prev_code_char in (_JS_AFTER_VALUE, _JS_AFTER_BLOCK):
+        return False
+    if prev_code_char in _JS_OBJECT_PREFIX:
+        return True
+    if prev_code_char.isalnum() or prev_code_char in "_$":
+        return not last_word_after_dot and last_word in _JS_OBJECT_KEYWORDS
+    return False
+
+
+def _js_regex_span_end(text, start):
+    """If the '/' at offset `start` could be a regex literal that CLOSES
+    on this same physical line, return the offset just past its closing
+    '/'. Return -1 if it cannot.
+
+    This is a hard language rule, not a heuristic: a JS regex literal may
+    not contain a raw newline, so a '/' with no unescaped,
+    outside-a-character-class closing '/' before the end of the line is
+    simply not a regex literal. Refusing to open one (rather than
+    scanning an "unterminated regex" to end of line, as this scanner used
+    to) means a misjudged '/' costs nothing at all instead of swallowing
+    the rest of the line as non-code."""
+    n = len(text)
+    j = start + 1
+    in_class = False
+    while j < n:
+        c = text[j]
+        if c == "\n":
+            return -1
+        if c == "\\":
+            if j + 1 >= n or text[j + 1] == "\n":
+                return -1
+            j += 2
+            continue
+        if c == "[":
+            in_class = True
+        elif c == "]":
+            in_class = False
+        elif c == "/" and not in_class:
+            return j + 1
+        j += 1
+    return -1
+
+
+def _js_contain_span(states, text, start, end):
+    """Relabel text[start:end] as live code - used by the containment
+    rules below to abandon a lexical state the scanner should never have
+    been in - and return the last non-whitespace character in that span
+    ("" if there is none) so the caller can resynchronise last_code_char.
+
+    Relabelling toward CODE, never away from it, is deliberate: a span
+    wrongly called code costs a human one glance at a cited line, while a
+    span wrongly called string/regex/comment hides a real violation and
+    exits 0."""
+    resync = ""
+    for k in range(start, end):
+        states[k] = _JS_CODE
+        if not text[k].isspace():
+            resync = text[k]
+    return resync
 
 
 def _js_regex_may_start(prev_code_char, last_word, last_word_after_dot):
@@ -182,10 +298,22 @@ def _js_regex_may_start(prev_code_char, last_word, last_word_after_dot):
     literal" and "division operator".
 
     Primary signal is the last code-producing character seen while in
-    "code" state: a '/' right after a value - a closing bracket/paren, or
-    a just-closed string/template/regex literal (_JS_AFTER_VALUE) - is
-    division; a '/' after an operator, punctuation, or at the very start
-    can open a regex literal.
+    "code" state: a '/' right after a VALUE is division, a '/' anywhere
+    else can open a regex literal. Every way JS can end a value is
+    accounted for, so this is a grammar rule rather than a sample of
+    cases: an identifier or number (the alphanumeric branch below), a
+    closing ']', a call or grouping ')' or an object literal's '}' (both
+    arrive here as _JS_AFTER_VALUE), a closed string/template/regex
+    literal (also _JS_AFTER_VALUE), and a postfix '++'/'--' (likewise).
+
+    Neither '}' nor ')' appears in the "always division" set below,
+    because neither is always a value: `if (x) { f(); }` and `if (x)`
+    are both followed by fresh-expression position, where
+    `/['"]/.test(z)` is plain, valid JS. Calling those division left the
+    quote inside the regex to open a real string that ran away and
+    swallowed live code after it. _scan_js_states resolves which kind of
+    '}' and ')' it saw from its own brace and paren stacks and passes the
+    matching sentinel here, so this function never has to guess.
 
     An identifier-ending character (last_code_char alphanumeric/_/$) is
     ambiguous on its own - most identifiers ending a value mean division
@@ -221,9 +349,11 @@ def _js_regex_may_start(prev_code_char, last_word, last_word_after_dot):
     the fix is to get more cases right."""
     if prev_code_char == "":
         return True
+    if prev_code_char == _JS_AFTER_BLOCK:
+        return True
     if prev_code_char == _JS_AFTER_VALUE:
         return False
-    if prev_code_char in ")]}":
+    if prev_code_char == "]":
         return False
     if prev_code_char.isalnum() or prev_code_char in "_$":
         return not last_word_after_dot and last_word in _JS_REGEX_KEYWORDS
@@ -250,34 +380,97 @@ def _scan_js_states(text):
     string and never affects anything that follows it.
 
     Includes keyword lookback for the regex/division rule (`return
-    /x/.test(s)` vs `count / 2`) - see _js_regex_may_start and last_word
-    below. Deliberately still not a full JS parser: automatic-semicolon-
-    insertion edge cases (which misplace statement boundaries, not
-    string/regex state, so they cannot themselves cause a runaway string)
-    remain out of scope. A miscall in _js_regex_may_start is a real bug,
-    not a safe default in either direction - misreading a live '/' as a
-    regex-open swallows real code as non-code state, which is exactly
-    the false-negative failure mode this scanner exists to remove (a
-    live MAP assignment demoted to WARN/PASS instead of FAILing).
+    /x/.test(s)` vs `count / 2`) and a structural block-vs-object-literal
+    distinction for '}' - see _js_regex_may_start, _js_brace_opens_object
+    and last_word below. A miscall there is a real bug, not a safe
+    default in either direction - misreading a live '/' as a regex-open
+    swallows real code as non-code state, which is exactly the
+    false-negative failure mode this scanner exists to remove (a live MAP
+    assignment demoted to WARN/PASS instead of FAILing).
+
+    Because no context-free scanner resolves regex-vs-division for every
+    input, correctness here does NOT rest on that disambiguation being
+    complete. It rests on four CONTAINMENT rules, each a hard JavaScript
+    language rule rather than a heuristic, that bound what a miscall can
+    cost:
+
+      1. A '...' or "..." string may not contain a raw newline. Reaching
+         one means this scanner mis-entered that state, so the span is
+         abandoned and RELABELLED AS LIVE CODE at the newline (see
+         _js_contain_span). A backslash immediately before the newline is
+         a legal line continuation and is honoured, so real multi-line
+         strings still work.
+      2. A regex literal may not contain a raw newline either, so a '/'
+         with no closing '/' on its own line never opens one at all (see
+         _js_regex_span_end) - it is just an ordinary code character.
+      3. Inside a span where a '/' was judged DIVISION but could
+         grammatically have been a regex literal, a '`' or a '/*' is not
+         allowed to open a template literal or block comment. Those are
+         the only two states that legitimately cross a line boundary,
+         i.e. the only two a misjudged division could use to escape rules
+         1 and 2. Strings and line comments are deliberately NOT
+         suppressed there: rule 1 already bounds them, and suppressing
+         them would wrongly relabel real string and comment text as live.
+      4. Any string, template literal, block comment or ${} interpolation
+         still open at the end of the body is a syntax error in real JS,
+         so it too is relabelled as live code rather than allowed to
+         swallow the tail of the script.
+
+    Together these give the invariant this check depends on: at the first
+    character of every physical line the scanner is in code, a template
+    literal, or a block comment - and the latter two can only be ENTERED
+    from code state, at a '`' or '/*' that rule 3 has already vetted. A
+    regex/division miscall can therefore lose at most part of one line,
+    and the parts it does lose are relabelled toward "live" rather than
+    away from it.
+
+    Automatic-semicolon-insertion remains out of scope, and cannot
+    reproduce the failure class: ASI misplaces STATEMENT boundaries, not
+    string/regex state, and `var x = a` / newline / `/['"]/.test(y)` -
+    the ASI-flavoured shape of this bug - is already handled by rule 1.
+
     last_code_char and last_word are updated on every code character AND
-    on every point a string, template literal, or regex literal closes
-    (via the _JS_AFTER_VALUE sentinel), so a '/' immediately following a
-    closed literal is still correctly read as division, not judged
-    against whatever token preceded that literal's OPENING quote."""
+    at every point a string, template literal, regex literal or brace
+    closes (via the _JS_AFTER_VALUE / _JS_AFTER_BLOCK sentinels), so a
+    '/' immediately following a closed literal is read as division, not
+    judged against whatever token preceded that literal's OPENING
+    quote."""
     n = len(text)
     states = [_JS_CODE] * n
-    # (state, brace_depth, saved_last_code_char, saved_last_word,
-    # saved_last_word_after_dot) - brace_depth is only used by a "code"
-    # frame entered via ${ inside a template literal, to find its
-    # matching }. The three "saved_*" fields are only used by that same
-    # kind of frame: a ${...} interpolation is a fresh expression
-    # context, so its OWN last_code_char/last_word start clean (regex may
-    # open; no preceding word) rather than inheriting whatever code
-    # token/word preceded the ${ OR leaking in from an earlier, already-
-    # closed sibling interpolation in the same template - see the
-    # push/pop sites below for why this matters.
-    stack = [[_JS_CODE, 0, "", "", False]]
+    # Every frame has the same six fields, so every push and pop site
+    # reads the same shape:
+    #   [0] state
+    #   [1] brace kinds - for a "code" frame, one entry per currently open
+    #       '{' (True = object literal, False = block statement), so a '}'
+    #       knows which kind it closes; None for a non-code frame, which
+    #       never tracks braces. A code frame entered via ${ inside a
+    #       template literal also uses "no braces left open" to recognise
+    #       the '}' that ends the interpolation.
+    #   [2][3][4] saved last_code_char / last_word / last_word_after_dot -
+    #       only used by a ${ } interpolation frame: an interpolation is a
+    #       fresh expression context, so its OWN last_code_char/last_word
+    #       start clean (regex may open; no preceding word) rather than
+    #       inheriting whatever code token/word preceded the ${ OR leaking
+    #       in from an earlier, already-closed sibling interpolation in
+    #       the same template - see the push/pop sites below.
+    #   [5] the offset this frame's state started at, used by the
+    #       containment rules to relabel an abandoned span as live code.
+    #   [6] paren kinds - for a "code" frame, one entry per currently open
+    #       '(' (True = a control clause's paren, as in `if (x)`, False =
+    #       a call or grouping paren, as in `f(x)` or `(a + b)`), so a ')'
+    #       knows whether it closed a value; None for a non-code frame.
+    stack = [[_JS_CODE, [], "", "", False, 0, []]]
     last_code_char = ""
+    # Exclusive end offset of the most recent span in which a '/' was
+    # judged DIVISION even though a same-line closing '/' exists, i.e. a
+    # span that could grammatically have been a regex literal instead.
+    # Inside such a span a '`' or a '/*' may not open a template literal
+    # or block comment (containment rule 3 in the docstring): those two
+    # states are the only ones that legitimately cross a line boundary, so
+    # they are the only way a misjudged division could escape the
+    # line-level containment the other rules give. Positional and
+    # monotonic, so it needs no reset and cannot go stale.
+    suspect_until = -1
     # last_word: the last COMPLETE identifier-like token seen in code
     # state (letters/digits/_/$), used only for the regex/division
     # keyword check above. cur_word accumulates the token currently being
@@ -315,83 +508,136 @@ def _scan_js_states(text):
                 last_word_after_dot = cur_word_after_dot
                 cur_word = ""
             if ch == "/" and nxt == "/":
-                stack.append([_JS_LINECOMMENT, 0])
+                stack.append([_JS_LINECOMMENT, None, "", "", False, i, None])
                 states[i] = _JS_LINECOMMENT
                 i += 1
                 continue
-            if ch == "/" and nxt == "*":
-                stack.append([_JS_BLOCKCOMMENT, 0])
+            if ch == "/" and nxt == "*" and i >= suspect_until:
+                stack.append([_JS_BLOCKCOMMENT, None, "", "", False, i, None])
                 states[i] = _JS_BLOCKCOMMENT
                 i += 1
                 continue
             if ch == "'":
-                stack.append([_JS_SQSTRING, 0])
+                stack.append([_JS_SQSTRING, None, "", "", False, i, None])
                 states[i] = _JS_SQSTRING
                 i += 1
                 continue
             if ch == '"':
-                stack.append([_JS_DQSTRING, 0])
+                stack.append([_JS_DQSTRING, None, "", "", False, i, None])
                 states[i] = _JS_DQSTRING
                 i += 1
                 continue
-            if ch == "`":
-                stack.append([_JS_TEMPLATE, 0])
+            if ch == "`" and i >= suspect_until:
+                stack.append([_JS_TEMPLATE, None, "", "", False, i, None])
                 states[i] = _JS_TEMPLATE
                 i += 1
                 continue
-            if ch == "/" and _js_regex_may_start(
-                    last_code_char, last_word, last_word_after_dot):
-                j = i + 1
-                in_class = False
-                while j < n:
-                    c = text[j]
-                    if c == "\n":
-                        break
-                    if c == "\\":
-                        j += 2
+            if ch == "/" and i >= suspect_until:
+                # Containment rule 2: a regex literal cannot contain a raw
+                # newline, so unless a closing '/' exists on THIS line
+                # there is no regex literal here at all and the '/' falls
+                # through as an ordinary code character. The scanner used
+                # to run an unterminated regex to end of line, which
+                # relabelled the rest of a live line as non-code for free.
+                span_end = _js_regex_span_end(text, i)
+                if span_end >= 0:
+                    if _js_regex_may_start(last_code_char, last_word,
+                                           last_word_after_dot):
+                        for k in range(i, span_end):
+                            states[k] = _JS_REGEX
+                        i = span_end
+                        last_code_char = _JS_AFTER_VALUE
+                        last_word = ""
+                        last_word_after_dot = False
                         continue
-                    if c == "[":
-                        in_class = True
-                    elif c == "]":
-                        in_class = False
-                    elif c == "/" and not in_class:
-                        j += 1
-                        break
-                    j += 1
-                for k in range(i, min(j, n)):
-                    states[k] = _JS_REGEX
-                i = j
-                last_code_char = _JS_AFTER_VALUE
-                continue
+                    # Division was the call - but a regex literal was
+                    # grammatically possible here, so this span is exactly
+                    # where a wrong call does its damage. Containment rule
+                    # 3: no '`' and no '/*' may open a state inside it.
+                    # The span stops one character SHORT of the candidate
+                    # closing '/', so that '/' can still start a comment:
+                    # `a / b; /* note */` is ordinary code whose comment
+                    # must not be swallowed, and if the earlier '/' really
+                    # was division then a '/*' at the span's far end
+                    # really is a comment.
+                    suspect_until = span_end - 1
             states[i] = _JS_CODE
-            if len(stack) > 1:
-                # inside a ${ ... } interpolation frame: track brace
-                # depth so a matching '}' pops back to the template
-                if ch == "{":
-                    top[1] += 1
-                elif ch == "}":
-                    if top[1] == 0:
-                        # restore the OUTER expression's last_code_char/
-                        # last_word - not whatever this interpolation's
-                        # own code last looked at. A second, later
-                        # ${...} in the same template must start fresh
-                        # (see the push site), never see the previous
-                        # interpolation's leftover values - that stale-
-                        # value leak, for last_code_char alone, is
-                        # exactly what let a regex-shaped token like
-                        # /['"]/ inside a SECOND interpolation be
-                        # misread as division, opening a real string
-                        # that ran away and swallowed live code after
-                        # it.
-                        last_code_char = top[2]
-                        last_word = top[3]
-                        last_word_after_dot = top[4]
-                        stack.pop()
-                        i += 1
-                        continue
-                    top[1] -= 1
+            if ch == "(":
+                top[6].append(not last_word_after_dot
+                              and last_word in _JS_CONTROL_PAREN_KEYWORDS)
+                last_word = ""
+                last_word_after_dot = False
+            elif ch == ")":
+                # closes a '(' this frame opened: a call or grouping paren
+                # produced a value (so a following '/' is division), a
+                # control clause's paren did not (so a following '/' opens
+                # a regex literal - `if (a) /['"]/.test(b);`). An
+                # unbalanced ')' is read as a call close, its overwhelming
+                # meaning in real JS.
+                last_code_char = _JS_AFTER_BLOCK if (
+                    top[6] and top[6].pop()) else _JS_AFTER_VALUE
+                last_word = ""
+                last_word_after_dot = False
+                i += 1
+                continue
+            elif ch == "{":
+                top[1].append(_js_brace_opens_object(
+                    last_code_char, last_word, last_word_after_dot))
+                last_word = ""
+                last_word_after_dot = False
+            elif ch == "}":
+                if top[1]:
+                    # closes a '{' this frame opened: an object literal
+                    # produces a value (so a following '/' is division), a
+                    # block statement does not (so a following '/' opens a
+                    # regex literal).
+                    last_code_char = _JS_AFTER_VALUE if top[1].pop() \
+                        else _JS_AFTER_BLOCK
+                    last_word = ""
+                    last_word_after_dot = False
+                    i += 1
+                    continue
+                if len(stack) > 1:
+                    # no '{' open in this frame, so this '}' ends the
+                    # ${ ... } interpolation that pushed it. Restore the
+                    # OUTER expression's last_code_char/last_word - not
+                    # whatever this interpolation's own code last looked
+                    # at. A second, later ${...} in the same template must
+                    # start fresh (see the push site), never see the
+                    # previous interpolation's leftover values - that
+                    # stale-value leak, for last_code_char alone, is
+                    # exactly what let a regex-shaped token like /['"]/
+                    # inside a SECOND interpolation be misread as
+                    # division, opening a real string that ran away and
+                    # swallowed live code after it.
+                    last_code_char = top[2]
+                    last_word = top[3]
+                    last_word_after_dot = top[4]
+                    stack.pop()
+                    i += 1
+                    continue
+                # An unbalanced '}' at the top level of the body: real JS
+                # would not have one, so the brace stack has most likely
+                # lost a '{' to a span the containment rules relabelled
+                # (they do not re-tokenise what they hand back). Read it
+                # as a block close, the far commoner meaning of a bare '}'
+                # in statement text, and keep scanning. Note the
+                # len(stack) > 1 guard above: the base frame is never
+                # popped, so this cannot underflow the stack.
+                last_code_char = _JS_AFTER_BLOCK
+                last_word = ""
+                last_word_after_dot = False
+                i += 1
+                continue
             if not ch.isspace():
-                last_code_char = ch
+                # A postfix (or prefix) '++'/'--' produces a value, so a
+                # '/' after it is division - `i++ / 2` is not a regex
+                # open, even though a bare '+' or '-' before a '/' is.
+                # Recorded as the value sentinel rather than as '+'/'-'
+                # so _js_regex_may_start needs no second-to-last
+                # character.
+                last_code_char = _JS_AFTER_VALUE \
+                    if (ch in "+-" and last_code_char == ch) else ch
             i += 1
             continue
         if state == _JS_LINECOMMENT:
@@ -411,16 +657,43 @@ def _scan_js_states(text):
             continue
         if state in (_JS_SQSTRING, _JS_DQSTRING):
             quote = "'" if state == _JS_SQSTRING else '"'
-            states[i] = state
             if ch == "\\":
+                # A backslash escapes the next character - and immediately
+                # before a newline it is a LINE CONTINUATION, the one way
+                # a '...' or "..." string may legally cross a line
+                # boundary. Handled before the newline rule below so a
+                # continued string keeps running, exactly as real JS does.
+                states[i] = state
                 if i + 1 < n:
                     states[i + 1] = state
                 i += 2
                 continue
+            if ch == "\n":
+                # Containment rule 1: JS forbids a raw newline inside a
+                # '...' or "..." string, so this state cannot be real -
+                # far more likely the scanner mis-entered it (a quote
+                # inside a misjudged regex literal is how every known
+                # instance of this bug started). Abandon it, relabel the
+                # whole span as LIVE CODE, and resynchronise at the
+                # newline. This is what stops a phantom string from
+                # running to a distant quote and swallowing a genuine
+                # second `var MAP =` on the way.
+                last_code_char = _js_contain_span(states, text, top[5], i)
+                states[i] = _JS_CODE
+                last_word = ""
+                last_word_after_dot = False
+                cur_word = ""
+                cur_word_after_dot = False
+                stack.pop()
+                i += 1
+                continue
+            states[i] = state
             if ch == quote:
                 i += 1
                 stack.pop()
                 last_code_char = _JS_AFTER_VALUE
+                last_word = ""
+                last_word_after_dot = False
                 continue
             i += 1
             continue
@@ -452,8 +725,8 @@ def _scan_js_states(text):
                 # a regex-shaped token like /['"]/ inside a SECOND
                 # interpolation be misread as division, opening a real
                 # string that ran away and swallowed live code after it).
-                stack.append([_JS_CODE, 0, last_code_char,
-                              last_word, last_word_after_dot])
+                stack.append([_JS_CODE, [], last_code_char,
+                              last_word, last_word_after_dot, i, []])
                 last_code_char = ""
                 last_word = ""
                 last_word_after_dot = False
@@ -462,6 +735,21 @@ def _scan_js_states(text):
                 continue
             i += 1
             continue
+    # Containment rule 4: a string, template literal, block comment or
+    # ${ } interpolation still open at the end of the body is a syntax
+    # error in real JS, so it is much more likely a state this scanner
+    # mis-entered than genuinely unterminated source. Relabel every
+    # still-open span as live code instead of letting it swallow the tail
+    # of the script - this is the "runs away to EOF" half of the failure
+    # class, closed structurally. Frames are popped from the top down and
+    # each relabels through the end of the body, so an outer frame's
+    # earlier start offset wins, which is what we want. A // line comment
+    # running to EOF is legal JS and is deliberately left alone.
+    while len(stack) > 1:
+        frame = stack.pop()
+        if frame[0] in (_JS_SQSTRING, _JS_DQSTRING, _JS_TEMPLATE,
+                        _JS_BLOCKCOMMENT):
+            _js_contain_span(states, text, frame[5], n)
     return states
 
 
@@ -1042,9 +1330,10 @@ def c10(ctx):
     if not live_hits:
         if soft:
             # js_state_at is a real tokenizer, not a heuristic, so this
-            # path should be rare - but it is not a full JS parser
-            # (regex-vs-division needs keyword lookback this doesn't do;
-            # see _js_regex_may_start), so a residual miscall is still
+            # path should be rare - but it is not a full JS parser, and
+            # no context-free scanner resolves regex-vs-division for
+            # every input (see _js_regex_may_start and the containment
+            # rules in _scan_js_states), so a residual miscall is still
             # possible. Zero confirmed-live hits alongside something
             # MAP-shaped is not the same claim as zero assignments
             # existing at all; WARN and let a human look, rather than
@@ -1299,19 +1588,28 @@ INJECTIONS.update({
     #     containing token ('return /['"]/.test(x);') - before keyword
     #     lookback existed, the identifier-ending 'n' in "return" made
     #     the '/' read as division, leaving '[\'"]' to be read as code
-    #     and its own quote to open a real, unterminated string.
+    #     and its own quote to open a real, unterminated string;
+    #  5. a BLOCK statement's closing '}' immediately before a regex-
+    #     shaped, quote-containing token on the next line ('if (true) {
+    #     ... }' then '/['"]/.test(z);') - every '}' used to be read as
+    #     "a value just closed," so that '/' was called division and the
+    #     quote inside it opened a real string that ran away past the
+    #     assignment below it.
     # This strengthens the input so a future regression in any of the
-    # four mechanisms trips the self-test; it does not change what the
+    # five mechanisms trips the self-test; it does not change what the
     # injection is supposed to prove, so the expected set stays {10}.
     10: ("second MAP object assignment, on lines combining a "
          "string-then-division token, an apostrophe-bearing string, "
-         "a nested-template-interpolation regex literal, and a "
-         "keyword-preceding regex literal (regression guard)",
+         "a nested-template-interpolation regex literal, a "
+         "keyword-preceding regex literal, and a block-close-then-regex "
+         "literal (regression guard)",
          _inject_before(
              "function render()",
              "var ratio = \"a\" / 2; someFunc(\"don't\");\n"
              "var t = `${a} ${/['\"]/.test(x)} `;\n"
              "function ok(x){ return /['\"]/.test(x); }\n"
+             "if (true) { someFunc(); }\n"
+             "/['\"]/.test(z);\n"
              "var MAP = { assets: [] };\n"),
          {10}),
     11: ("hardcoded hex color outside :root",
