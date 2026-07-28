@@ -1588,7 +1588,18 @@ def _tag_is_quoted_marked(tag_text):
 
     Attribute NAMES are case-insensitive in HTML (CLASS="quoted" and
     DATA-QUOTED both count), handled by lower-casing the name before it
-    is used as the map key.
+    is used as the map key. Class TOKEN VALUES are NOT case-insensitive:
+    a CSS ".quoted" selector does not match class="Quoted" in standards
+    mode, so a browser does not treat that element as quoted, and this
+    function must not either. An earlier revision lower-cased the class
+    value before splitting it into tokens (`class_value.lower().split()`),
+    conflating attribute-name case-insensitivity with token-value
+    case-sensitivity - `<div class="Quoted">Buy now</div>` was wrongly
+    treated as genuinely quoted and silently stripped. The token compare
+    below is case-sensitive against the exact string "quoted"; only the
+    attribute NAME lookups (winners.get("class"), "data-quoted" in
+    winners) stay case-insensitive, because those really are names, not
+    values.
 
     This replaces an earlier, defective detector that scanned raw tag
     text with `[^>]*` for the SUBSTRING "class=...quoted..." or
@@ -1618,7 +1629,7 @@ def _tag_is_quoted_marked(tag_text):
     if "data-quoted" in winners:
         return True
     class_value = winners.get("class")
-    if class_value and "quoted" in class_value.lower().split():
+    if class_value and "quoted" in class_value.split():
         return True
     return False
 
