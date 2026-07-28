@@ -2478,9 +2478,17 @@ def _skip_noncode(text, i):
     return None
 
 
+_MAP_LOCATE_FAIL = "could not locate the MAP object literal to inspect"
+_MAP_AMBIGUOUS_SLASH_FAIL = (
+    'MAP body contains a "/" this checker cannot classify (regex '
+    "literal or division); data faithfulness cannot be verified safely")
+
+
 def _map_body(html):
-    """Text of the MAP object literal (its outer braces included), or
-    None if it cannot be located.
+    """(body, None) with the MAP object literal's full text (outer
+    braces included), or (None, reason) if it cannot be safely located -
+    reason is one of the two module constants above, so c17 can report
+    WHY, not just that extraction failed.
 
     Brace depth is counted only over characters _skip_noncode says are
     live code - never inside a quoted string or a comment. A naive,
@@ -2517,49 +2525,97 @@ def _map_body(html):
     not exercise this scanner at all, since naive counting also nets
     zero on it).
 
-    Known, accepted limitation: a JS regex literal containing a brace as
-    one of its OWN characters (e.g. an asset field written literally as
-    ``closer: /\\}/`` or ``opener: /\\{/``) is not recognised as a regex by
-    _skip_noncode at all - it only knows strings and comments, and a bare
-    '/' that doesn't start '//' or '/*' is not special-cased, so every
-    character inside the regex - including an escaping backslash - passes
-    through as ordinary text and its brace is counted exactly like a bare
-    one would be. MAP is a data literal (never a JS regex-vs-division
-    problem, unlike _scan_js_states' domain), and neither shipped example
-    nor the self-test FIXTURE contains one, so this was left unhandled -
-    but BOTH directions were verified directly on examples/demo_dashboard
-    .html rather than left as reasoning:
+    A JS regex literal is a THIRD way a brace can be miscounted, and it
+    is not handled the same way strings and comments are - it is
+    refused outright, never disambiguated. A bare '/' anywhere in code
+    position - one _skip_noncode does not recognise as opening a '//' or
+    '/*' comment, so by elimination it is either a regex literal or a
+    division operator - aborts extraction immediately with
+    _MAP_AMBIGUOUS_SLASH_FAIL, rather than letting the scan continue
+    past it and treat whatever braces happen to sit inside the regex as
+    real structure. Deliberately NOT disambiguated: this file's own
+    _scan_js_states already tried to solve regex-vs-division properly,
+    for check 10, and c10's own docstring records five separate review
+    rounds where a disambiguation bug in that lexer turned a real
+    violation into a false PASS - the eventual fix there was to strip
+    the lexer of all verdict authority, not to keep refining it. This
+    function does not reopen that: MAP is a generated DATA literal -
+    codes, names, ranks, strings, arrays - so a '/' in code position is
+    not the ORDINARY shape that data takes, and refusing it outright
+    removes the whole over-capture failure class by construction rather
+    than by another disambiguation attempt. A '/' inside a quoted string
+    (a URL, a file path) never reaches this check at all - _skip_noncode
+    consumes the whole string, unexamined, before any of its own
+    characters are ever inspected here - so the common case (string data
+    containing a slash) is unaffected; only a bare, code-position '/'
+    triggers it.
 
-    - a ``\\}`` inside the regex reads exactly like the in-string '}' case
-      above: it closes the outer object far too early. Verified: injecting
-      one right after MAP's first field truncated the 12008-character body
-      to 39 characters, and c17 correctly FAILed naming every one of the
-      six codes as "absent from MAP" and every rank as "not recorded."
-    - a ``\\{`` inside the regex inflates depth by one, and - because the
-      REST of the enclosing <script> body is itself one balanced JS unit -
-      the scan does not run to end of document (that would require the
-      script's own final closing structure to be missing, which it isn't):
-      it over-captures the entire remainder of the script, stopping at the
-      script's own last '}', one character before ``</script>``. Verified
-      at two different injection points (MAP's first field, and MAP's very
-      last field) - both landed at the identical offset, confirming this is
-      the script's own natural close, not an accident of placement. In
-      this document that over-capture happened to include nothing
-      code:/rank:-shaped beyond the six genuine entries, so c17 correctly
-      PASSed (the injected field changed no tracked value) rather than
-      reporting "could not locate" - a different outcome than a first,
-      untested guess at this direction assumed. Whether a real generator's
-      other trailing script content could ever turn this SAME over-capture
-      into a false PASS or a spurious extra-owner FAIL (as the general '{'
-      case above already describes) depends on what that content is; that
-      broader question was not re-tested here and no further direction is
-      asserted for it."""
+    This is NOT cost-free on real output, and that was checked rather
+    than assumed: examples/research_dashboard.html's own MAP literal
+    contains `forbiddenScan:[/finding/i,/recommendation/i,/causal/i]`
+    (verified at depth 2, genuinely inside MAP's own object, not past
+    a premature close) - three real, live regex literals the dashboard
+    uses to scan its OWN rendered banner text for violations of its
+    honesty constraint's NEVER-clause; the source line right above it
+    even says so: "/* forbidden-claims token set, parsed from the
+    NEVER-clause of THIS map */". That field is not hostile and not an
+    injection artifact - it is the research dashboard's own mechanism
+    for enforcing the exact banner text check 17 also verifies - but
+    this function cannot tell that apart from a hostile regex built to
+    mask an over-capture, and per the reasoning above it does not try
+    to. The result: check 17 now FAILs on a genuinely faithful,
+    unmodified examples/research_dashboard.html with
+    _MAP_AMBIGUOUS_SLASH_FAIL, where it previously PASSed. This is a
+    disclosed, accepted cost of refusing to guess, not an oversight -
+    see this task's break-it notes for the decision this forces
+    (EXPECTATIONS['research'] is now unreachable against its own
+    shipped example until either this rule or that dashboard changes).
+    examples/demo_dashboard.html's MAP contains no code-position '/' at
+    all and is unaffected.
+
+    This was not always the design. An earlier version of this function
+    left regex literals unhandled entirely, on the theory that neither
+    shipped example nor the self-test FIXTURE contains one and any real
+    generator emits data, not code, into MAP. That theory was tested,
+    not just asserted, and the untested half of it FAILED: an escaped
+    brace inside a regex literal (`re_field: /\\{/,`) inflates depth by
+    one exactly like the in-string case above, and - because the rest of
+    the enclosing <script> body is one balanced JS unit - the scan does
+    not fail to find a close; it over-captures the ENTIRE remainder of
+    the script, landing at the script's own last '}'. That over-captured
+    tail is text check 17 was never meant to search, and a constructed
+    attack proved the danger this docstring had previously only
+    described in the abstract: starting from a genuine copy of
+    examples/demo_dashboard.html, (1) INF-3's own `code:"INF-3"` field
+    was renamed to `code:"XXX-3"` - its real ownership genuinely gone,
+    only a bare prose mention of "INF-3" surviving elsewhere in MAP: (2)
+    a `re_field: /\\{/,` field was added to that same (now-renamed)
+    entry, inflating depth by one; (3) a `var DECOY = { code:"INF-3",
+    rank:4 };` statement was inserted just after MAP's own real closing
+    `};`, landing inside the resulting over-captured region purely
+    because the scan no longer stopped where it should have. Measured
+    directly: the over-captured body ballooned from a clean 12008
+    characters to 37754, the decoy was inside it, and c17 returned PASS
+    with zero problems - a genuinely unfaithful dashboard (INF-3's real
+    entry no longer owns a code: field) passing the exact check that
+    exists to catch that, because the decoy's own unrelated code:/rank:
+    pair satisfied the ownership check in the real entry's place. The
+    SAME three-part construction, re-run against the code-position '/'
+    refusal above, now FAILs with _MAP_AMBIGUOUS_SLASH_FAIL at the
+    regex field's own opening '/' - before the renamed field or the
+    decoy object are ever reached, because the scan never gets far
+    enough to see either one. See this task's break-it notes for the
+    full verification, including that a '/' inside a string value (a
+    URL, a path) still does not trigger this, and see the
+    forbiddenScan paragraph above for the one shipped example where a
+    genuinely faithful dashboard does NOT still PASS - refusing to
+    guess has a real, named cost as well as a real, named benefit."""
     m = re.search(r"(?:const|let|var)\s+MAP\s*=\s*", html)
     if not m:
-        return None
+        return None, _MAP_LOCATE_FAIL
     start = html.find("{", m.end())
     if start == -1:
-        return None
+        return None, _MAP_LOCATE_FAIL
     depth = 0
     i = start
     n = len(html)
@@ -2569,14 +2625,16 @@ def _map_body(html):
             i = skip
             continue
         c = html[i]
+        if c == "/":
+            return None, _MAP_AMBIGUOUS_SLASH_FAIL
         if c == "{":
             depth += 1
         elif c == "}":
             depth -= 1
             if depth == 0:
-                return html[start:i + 1]
+                return html[start:i + 1], None
         i += 1
-    return None
+    return None, _MAP_LOCATE_FAIL
 
 
 def _map_entries(body):
@@ -2672,16 +2730,23 @@ def c17(ctx):
     independent review's break-it testing (constructing exactly that
     fixture: an unranked code, its real code: field removed, a bare
     mention of the code text left surviving elsewhere in MAP) and
-    reproduced here before this guard was added.
-    All three shipped fixtures keep codes and ranks 1:1 today, so this
-    never fires against selftest/research/demo - but nothing enforced
-    that invariant, and a future fixture that let it drift would
-    silently reopen the gap. Checked eagerly, against the fixture alone
-    (before ever touching ctx.html), and NOT with a bare `assert`:
-    assertions are stripped under `python -O`, which would make this
-    guard vanish exactly when someone runs the checker that way - a
-    malformed fixture must FAIL loudly under every interpreter flag, not
-    only some of them."""
+    reproduced here before this guard was added. The check is the full
+    set(codes) != set(ranks) - not just codes-minus-ranks - and names
+    both directions when present: a rank listed for a code that ISN'T in
+    "codes" is equally a malformed fixture (that rank check would run
+    against a code exp["codes"] never promised was even present), even
+    though today it happens to fail downstream anyway, at the rank-
+    ownership loop, rather than through a silent gap - attributing it to
+    the fixture here, rather than letting it read as a dashboard defect,
+    is the point. All three shipped fixtures keep codes and ranks
+    exactly equal today, so this never fires against
+    selftest/research/demo - but nothing enforced that invariant, and a
+    future fixture that let it drift would silently reopen the gap.
+    Checked eagerly, against the fixture alone (before ever touching
+    ctx.html), and NOT with a bare `assert`: assertions are stripped
+    under `python -O`, which would make this guard vanish exactly when
+    someone runs the checker that way - a malformed fixture must FAIL
+    loudly under every interpreter flag, not only some of them."""
     name = "expected asset codes, ranks, and banner text present"
     rule = "section 8.4/section 8.5"
     if not ctx.expect:
@@ -2691,15 +2756,22 @@ def c17(ctx):
         return Result(17, name, rule, FAIL,
                       ["unknown fixture %r; known: %s"
                        % (ctx.expect, ", ".join(sorted(EXPECTATIONS)))])
-    unranked = sorted(set(exp["codes"]) - set(exp["ranks"]))
-    if unranked:
+    code_set = set(exp["codes"])
+    rank_set = set(exp["ranks"])
+    if code_set != rank_set:
+        detail = []
+        unranked = sorted(code_set - rank_set)
+        if unranked:
+            detail.append("codes without ranks: %s" % unranked)
+        unlisted = sorted(rank_set - code_set)
+        if unlisted:
+            detail.append("ranks without codes: %s" % unlisted)
         return Result(17, name, rule, FAIL,
-                      ["fixture %r is internally inconsistent: codes "
-                       "without ranks: %s" % (ctx.expect, unranked)])
-    body = _map_body(ctx.html)
+                      ["fixture %r is internally inconsistent (%s)"
+                       % (ctx.expect, "; ".join(detail))])
+    body, reason = _map_body(ctx.html)
     if body is None:
-        return Result(17, name, rule, FAIL,
-                      ["could not locate the MAP object literal to inspect"])
+        return Result(17, name, rule, FAIL, [reason])
     problems = []
     for code in exp["codes"]:
         if code not in body:
