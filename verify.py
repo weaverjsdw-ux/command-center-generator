@@ -3282,21 +3282,22 @@ SECTION_8_COVERAGE = {
 
 
 _HTML_CLOSE_RX = re.compile(r"</html\s*>", re.I)
+_BODY_CLOSE_TAIL_RX = re.compile(r"</body\s*>\Z", re.I)
 _SELF_CHECK_RX = re.compile(r"<!--\s*SELF-CHECK\s*:(.*?)-->", re.S | re.I)
 
 
 def _attestation(html):
     """Parse the model's claimed section 8 results from its own
     SELF-CHECK comment (see GENERATOR_PACKAGE.md section 8's amended
-    preamble). Returns None if no comment sits in the one position the
-    amendment specifies - "the final line inside the document,
-    immediately before the closing </html> tag" - so there is no claim
-    to adjudicate. Returns {} if a comment IS there but no `N=value`
-    entry inside it parsed - a malformed block, distinct from no block
-    at all. Otherwise returns {rule number: claimed value}, value one of
-    "pass", "fail", "n/a" (lowercased). Distinguishing None from {} is
-    what lets check 18 tell a missing requirement (SKIP) apart from a
-    present-but-garbled one (WARN).
+    preamble). Returns None if no comment sits where the amendment
+    requires - "as the last content in the document, immediately before
+    the closing tags" - so there is no claim to adjudicate. Returns {}
+    if a comment IS there but no `N=value` entry inside it parsed - a
+    malformed block, distinct from no block at all. Otherwise returns
+    {rule number: claimed value}, value one of "pass", "fail", "n/a"
+    (lowercased). Distinguishing None from {} is what lets check 18 tell
+    a missing requirement (SKIP) apart from a present-but-garbled one
+    (WARN).
 
     Deliberately position-anchored, not a leftmost `re.search` over the
     raw document: a naive leftmost search is fooled by ANY earlier
@@ -3316,21 +3317,36 @@ def _attestation(html):
     insensitive, tolerant of internal whitespace) and takes the LAST one
     as the document's true closing tag - matching what check 16 already
     treats as authoritative ("does not end with </html>"). Everything
-    before that position, right-trimmed of whitespace, is the
-    candidate's required end. _SELF_CHECK_RX then finds every complete,
-    self-contained SELF-CHECK comment (non-greedy, so each match ends at
-    its OWN first "-->", never swallowing past it into unrelated
-    document text); only a match whose end lands exactly at that
-    trimmed boundary is the real attestation. A decoy elsewhere - before
-    or inside a masked region - never lands there, because something
-    always sits between its own "-->" and the true closing tag."""
+    before that position, right-trimmed of whitespace, is one valid end
+    boundary for the attestation. A cooperative model reading "the last
+    content in the document" just as plausibly closes its own </body>
+    FIRST and writes the comment as body content, one level up from
+    </html> - the ordinary, ubiquitous shape of essentially every real
+    HTML document - so a second boundary is also accepted: if that
+    right-trimmed prefix itself ends in a "</body>"-shaped tag (case-
+    insensitive, tolerant of internal whitespace, e.g. "</body >"),
+    stripping that tag and re-trimming gives the position just before
+    it. Both are genuine "last content before the closing tags"
+    positions; neither is preferred over the other. _SELF_CHECK_RX then
+    finds every complete, self-contained SELF-CHECK comment (non-greedy,
+    so each match ends at its OWN first "-->", never swallowing past it
+    into unrelated document text); only a match whose end lands exactly
+    at ONE of those boundaries is the real attestation. A decoy
+    elsewhere - before or inside a masked region, or with real content
+    (not just whitespace and a closing tag) following it - never lands
+    at either boundary, because something always sits between its own
+    "-->" and the true closing tags."""
     closes = list(_HTML_CLOSE_RX.finditer(html))
     if not closes:
         return None
-    body_end = len(html[:closes[-1].start()].rstrip())
+    prefix = html[:closes[-1].start()].rstrip()
+    boundaries = {len(prefix)}
+    body_close = _BODY_CLOSE_TAIL_RX.search(prefix)
+    if body_close is not None:
+        boundaries.add(len(prefix[:body_close.start()].rstrip()))
     m = None
     for cand in _SELF_CHECK_RX.finditer(html):
-        if cand.end() == body_end:
+        if cand.end() in boundaries:
             m = cand
             break
     if m is None:
@@ -3344,10 +3360,11 @@ def _attestation(html):
 @check(18, "self-check attestation matches actual results", "section 8 preamble")
 def c18(ctx):
     """section 8 preamble: the model is required to run section 8's ten
-    checks itself and emit its results as a SELF-CHECK comment just
-    inside </html>. This check does not re-derive whether the DASHBOARD
-    is correct - checks 1-17 already do that - it derives whether the
-    MODEL'S OWN CLAIM about those results was honest.
+    checks itself and emit its results as a SELF-CHECK comment as the
+    last content in the document, immediately before the closing tags.
+    This check does not re-derive whether the DASHBOARD is correct -
+    checks 1-17 already do that - it derives whether the MODEL'S OWN
+    CLAIM about those results was honest.
 
     One-directional by design: a claimed "pass" OR a claimed "n/a" on a
     section 8 rule this tool can mechanically cover, where the covering
@@ -3378,9 +3395,9 @@ def c18(ctx):
     claims = _attestation(ctx.html)
     if claims is None:
         return Result(18, name, rule, SKIP,
-                      ["no SELF-CHECK block present in the required "
-                       "position (immediately before </html>); the "
-                       "model's self-check claims cannot be compared"])
+                      ["no SELF-CHECK block present as the last content "
+                       "before the closing tags; the model's self-check "
+                       "claims cannot be compared"])
     if not claims:
         return Result(18, name, rule, WARN,
                       ["SELF-CHECK block present but no parseable entries"])

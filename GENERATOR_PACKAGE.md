@@ -259,8 +259,8 @@ A second map from a different domain pasted into this prompt must produce a cohe
 
 Run this against your generated file. If any check fails, fix and re-check; do not return a failing file.
 
-Then emit your results as the final line inside the document, immediately before
-the closing `</html>` tag:
+Then emit your results as the last content in the document, immediately before
+the closing tags:
 
     <!-- SELF-CHECK: 1=<pass|fail|n/a> 2=<pass|fail|n/a> 3=<pass|fail|n/a> 4=<pass|fail|n/a> 5=<pass|fail|n/a> 6=<pass|fail|n/a> 7=<pass|fail|n/a> 8=<pass|fail|n/a> 9=<pass|fail|n/a> 10=<pass|fail|n/a> -->
 
