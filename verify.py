@@ -866,10 +866,48 @@ class Ctx:
             r"<style\b[^>]*>(.*?)</style\s*>", self.html, re.S | re.I))
 
     def root_tokens(self):
+        """Custom-property name -> raw value, from every :root {...}
+        block inside a genuinely LIVE <style> body only.
+
+        Region-aware by construction, unlike the version this replaced:
+        that one built its map from self.style_text(), which joins the
+        body of every <style>...</style> tag found by a raw scan of
+        self.html - including a <style> tag whose own opening tag sits
+        inside an HTML comment or inside another script's JS string/
+        template literal. A browser never executes either, so a :root
+        block found only there is not really live CSS, and root_tokens()
+        was dead code (nothing called it) until check 14 started calling
+        it, so this was reachable only from there.
+
+        The region-blindness broke check 14 in both directions: a bad
+        token defined ONLY in such a masked <style> would still land in
+        this map, and check 14's root-token audit loop iterates every
+        entry in the map, live-referenced or not - a false FAIL that
+        traces to markup no browser ever runs. Conversely a real, live
+        font-family:var(--x) whose --x is defined ONLY in a masked
+        :root would resolve against that phantom value and PASS, when a
+        real browser would see --x as undefined there - a false PASS
+        with exit 0 on the exact violation check 14 exists to catch.
+        Neither direction fires on demo_dashboard.html or
+        research_dashboard.html today (each has exactly one :root block,
+        already in a live <style> body - confirmed by dumping this
+        method's own output before and after this fix, byte-identical
+        on both), so this closes a currently-latent hole rather than
+        changing either dashboard's result.
+
+        _STYLE_TAG_RX finds a <style> tag's own opening-tag offset the
+        same way _style_bodies (checks 11/14's own <style> scan) does; a
+        tag whose own start offset falls inside a masked region is
+        skipped entirely here too, mirroring _style_bodies's
+        `kind is not None` branch."""
         tokens = {}
-        for body in re.findall(r":root\s*\{(.*?)\}", self.style_text(), re.S):
-            for name, value in re.findall(r"(--[\w-]+)\s*:\s*([^;}]+)", body):
-                tokens[name] = value.strip()
+        for m in _STYLE_TAG_RX.finditer(self.html):
+            if self.region_kind_at(m.start()) is not None:
+                continue
+            for body in re.findall(r":root\s*\{(.*?)\}", m.group(1), re.S):
+                for name, value in re.findall(
+                        r"(--[\w-]+)\s*:\s*([^;}]+)", body):
+                    tokens[name] = value.strip()
         return tokens
 
 
@@ -1423,11 +1461,51 @@ _ROOT_BLOCK_RX = re.compile(r":root\s*\{.*?\}", re.S)
 _CSS_COMMENT_RX = re.compile(r"/\*.*?\*/", re.S)
 _CSS_DECL_RX = re.compile(r"([a-zA-Z-]+)\s*:\s*([^;{}]*)")
 
+# A var(...) CUSTOM-PROPERTY-NAME reference, e.g. the "--red-bg" in
+# var(--red-bg) or var(--red-bg, #000). Deliberately case-sensitive on
+# the "var(" lookbehind - CSS function names are conventionally lower-
+# case and a real generator emits them that way; an oddly-cased "VAR("
+# is left unmatched on purpose so it is NOT masked and still gets
+# scanned as plain text, erring toward reporting rather than silently
+# trusting unusual input. Used by _has_color_literal (check 11) and
+# _identifier_spans (check 13) to blank out or exclude exactly the
+# property-NAME text, never a literal fallback argument after a comma -
+# var(--brand, red) must still be caught, since that IS a real literal.
+_VAR_NAME_RX = re.compile(r"(?<=var\()\s*--[\w-]+")
+
 
 def _has_color_literal(text):
+    """True if text carries a hardcoded color literal: a hex code, an
+    rgb()/rgba()/hsl()/hsla() function call, or a bare NAMED_COLORS
+    word.
+
+    The NAMED_COLORS branch scans a var()-NAME-masked copy of text, not
+    text itself. \\bred\\b matches inside var(--banner-red) because "-"
+    is not a \\w character, so \\b sits on either side of "red" there
+    exactly as it would around a real standalone word - the custom
+    property's own NAME, "--banner-red", was being misread as if it
+    said the CSS keyword "red" wherever it was merely REFERENCED, not
+    just where a literal actually appears. That produced 26 false-FAIL
+    findings on demo_dashboard.html and 14 on research_dashboard.html,
+    every one of them a var() reference, zero of them a real hardcoded
+    literal (verified by enumerating every check-11 hit, not just the
+    first 10 the report truncates to).
+
+    Masking only the var()-NAME span, not the whole call, keeps this
+    change strictly narrower than dropping var() text altogether: a
+    literal fallback argument after the comma - var(--brand, red) -
+    stays outside the masked span and still matches, so a genuinely
+    hardcoded fallback literal still FAILs. A bare literal with no
+    enclosing var() at all - color: red; - is never touched by the
+    var()-NAME mask (nothing there is preceded by "var("), so it still
+    FAILs exactly as before. Only text that sits INSIDE a var()
+    reference's own property-name argument stops matching; that is
+    provably narrower than the un-fixed regex, never broader."""
+    named_scan_text = _VAR_NAME_RX.sub(lambda m: _blank_run(m.group(0)), text)
     return bool(re.search(r"#[0-9a-fA-F]{3,8}\b", text)
                 or re.search(r"\b(?:rgba?|hsla?)\s*\(", text)
-                or any(re.search(r"\b%s\b" % c, text) for c in NAMED_COLORS))
+                or any(re.search(r"\b%s\b" % c, named_scan_text)
+                       for c in NAMED_COLORS))
 
 
 def _style_bodies(ctx):
@@ -1876,6 +1954,50 @@ def c12(ctx):
     return Result(12, name, rule, WARN, details)
 
 
+def _identifier_spans(html):
+    """[(start, end)] for every span of text that is pure machine
+    identifier syntax, never something a person reads as prose: an HTML
+    tag's own ATTRIBUTE NAME (not its value - class="homelab" is left
+    completely alone, only the literal word `class`/`data-...` etc.
+    would be masked, and REFERENCE_VOCAB has no such entries), and a
+    var(...) CUSTOM-PROPERTY-NAME reference (not a literal fallback
+    argument after a comma - see _VAR_NAME_RX, shared with check 11's
+    identical bug).
+
+    \\b treats a hyphen as a word boundary because "-" is not a \\w
+    character, so a check13 word list entry like "backup" matches
+    inside data-backup-action's ATTRIBUTE NAME, or inside a
+    var(--backup-tint) reference's property NAME, exactly as if it were
+    a standalone English word - same defect class as check 11's
+    \\bred\\b-inside-var(--banner-red), reached through a different kind
+    of markup. Unlike a :root token DECLARATION (--backup-tint: ...;),
+    which already sits inside a <style> body and is caught by c13's
+    existing region grading, both of these live in ordinary LIVE
+    markup - an attribute name is part of the tag itself, and a
+    style="...var(--x)..." reference sits inside a live attribute VALUE
+    - so region grading alone never touches them.
+
+    Built from _TAG_RX + _ATTR_PARSE_RX, the same quote-aware tag/
+    attribute matchers checks 7-12 already use (see
+    _tag_is_quoted_marked), not a bespoke scan - so a quoted attribute
+    value containing "=" or whitespace is parsed correctly rather than
+    split on the wrong character. c13 tests membership with the
+    existing _offset_in_spans against a match's start offset only,
+    which is safe here because a REFERENCE_VOCAB match that starts
+    inside one of these spans is, by construction, also entirely
+    contained by it (attribute names and var()-argument names are each
+    one contiguous hyphen-and-word-character run with no embedded
+    boundary a match could straddle)."""
+    spans = []
+    for m in _TAG_RX.finditer(html):
+        tag_start = m.start()
+        for am in _ATTR_PARSE_RX.finditer(m.group(0)):
+            spans.append((tag_start + am.start(1), tag_start + am.end(1)))
+    for vm in _VAR_NAME_RX.finditer(html):
+        spans.append((vm.start(), vm.end()))
+    return spans
+
+
 @check(13, "no reference-example vocabulary absent from the source map",
        "section 8.7")
 def c13(ctx):
@@ -1897,14 +2019,22 @@ def c13(ctx):
     leakage from legitimate usage and always WARNs instead of guessing.
 
     Word-boundary note: several list entries ("backup", "restore",
-    "monitoring") can sit inside a hyphenated CSS custom-property token
-    such as --backup-tint, where \\b still matches on either side of the
-    hyphen (Task 4's `\\bred\\b` inside `--banner-red` bug). A :root token
-    declaration lives inside a <style> body by construction, so the
-    region grading above already demotes that hit to WARN rather than
-    letting it FAIL - the fix is the existing region layer, not a new
-    hyphen-aware pattern. Verified empirically in the report, not just
-    reasoned about."""
+    "monitoring") can sit inside a hyphenated identifier, where \\b still
+    matches on either side of the hyphen (the same defect class as check
+    11's \\bred\\b inside var(--banner-red)). A :root token DECLARATION
+    such as --backup-tint:#000; lives inside a <style> body by
+    construction, so the region grading above already demotes that hit
+    to WARN rather than letting it FAIL - that half needed no new fix.
+    Two other positions are NOT protected by region grading, because
+    they sit in ordinarily-live markup: an HTML attribute NAME
+    (data-backup-action) and a var(...) reference to the token
+    (style="color:var(--backup-tint)", live wherever it appears, not
+    just inline). Both false-FAILed under --map until _identifier_spans
+    was added below to exclude exactly those two identifier positions,
+    leaving every other position - including a class="homelab" ATTRIBUTE
+    VALUE and ordinary prose such as "restore-drill write-up" - checked
+    exactly as before. Verified empirically against both committed
+    dashboards, not just reasoned about."""
     name = "no reference-example vocabulary absent from the source map"
     rule = "section 8.7"
     if ctx.reference:
@@ -1914,11 +2044,14 @@ def c13(ctx):
     soft = []
     seen_live = set()
     seen_soft = set()
+    id_spans = _identifier_spans(ctx.html)
     for word in REFERENCE_VOCAB:
         rx = re.compile(r"\b%s\b" % re.escape(word), re.I)
         if ctx.map_text and rx.search(ctx.map_text):
             continue  # present in THIS map, so not leakage (section 8.7)
         for m in rx.finditer(ctx.html):
+            if _offset_in_spans(m.start(), id_spans):
+                continue  # a machine identifier, not prose - see _identifier_spans
             lineno = ctx.lineno_at(m.start())
             kind = ctx.region_kind_at(m.start())
             if kind is not None:
@@ -2217,18 +2350,20 @@ def c14(ctx):
     rule and cannot FAIL - _soft_font_declarations reports it at WARN
     instead of dropping it.
 
-    Known limitations, tested and disclosed rather than silently
-    assumed away (see the task report): Ctx.root_tokens() is
-    region-blind (built in Task 2, out of scope here) - a :root block
-    that exists only inside an HTML comment or a JS string still feeds
-    the token map, so a bad font token defined ONLY there can produce a
-    false FAIL via the root-token loop, and conversely a live
-    font-family:var(--x) whose --x is defined ONLY in such a commented-
-    out :root resolves and PASSes when the rendered page would actually
-    see --x as undefined. A font-role root token holding a single bare,
-    unquoted, non-generic family name with no comma and no quotes
+    Known limitation, tested and disclosed rather than silently assumed
+    away: a font-role root token holding a single bare, unquoted,
+    non-generic family name with no comma and no quotes
     (--font-primary:Arial) is not examined by the root-token loop at
-    all unless referenced elsewhere (see _is_font_family_token)."""
+    all unless referenced elsewhere (see _is_font_family_token).
+
+    Ctx.root_tokens() used to be region-blind - a :root block that
+    existed only inside an HTML comment or a JS string still fed the
+    token map, which could produce a false FAIL (a bad token defined
+    ONLY there, picked up by the root-token loop below) or a false PASS
+    (a live var(--x) resolving against a phantom value that a real
+    browser would never see). That has been fixed at the source - see
+    Ctx.root_tokens()'s own docstring - so this check now sees only
+    tokens a browser would actually apply."""
     name = "every font-family ends in a generic family"
     rule = "section 6.6"
     tokens = ctx.root_tokens()
@@ -3104,6 +3239,17 @@ def c17(ctx):
 # against a check that scans raw text with no idea which regions are
 # actually markup. INJECTIONS only ever proves violations are caught;
 # this is what proves legitimate content is not flagged.
+#
+# Two more entries were added by Task 9's baselining, for the same
+# reason: body{}'s border-color:var(--accent-red) and the
+# data-backup-action/style="color:var(--backup-tint)" div are both
+# hyphenated-identifier shapes that checks 11 and 13 used to
+# misread as bare "red"/"backup" literals, because \b treats a hyphen
+# as a word boundary. Both must stay silent - not WARN, not FAIL - for
+# baseline to stay clean; if either check's fix ever regresses, this
+# is a HARD stop for check 11 (baseline FAIL aborts self-test before
+# any injection runs) and a visible new WARN line for check 13 (which
+# can only WARN here, never FAIL, since this fixture carries no --map).
 FIXTURE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3111,11 +3257,12 @@ FIXTURE = """<!DOCTYPE html>
 <title>Self-Test Fixture</title>
 <style>
 :root{ --bg:#0d1117; --ink:#e6edf3; --mono:'IBM Plex Mono', ui-monospace, monospace; }
-body{ background:var(--bg); color:var(--ink); font-family:var(--mono); }
+body{ background:var(--bg); color:var(--ink); font-family:var(--mono); border-color:var(--accent-red); }
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div data-backup-action="none" style="color:var(--backup-tint)"></div>
 <!--
 reference only, not live:
 <link href="https://cdn.example.com/also-documentation.css"
@@ -3236,7 +3383,14 @@ INJECTIONS.update({
              "var MAP = { assets: [] };\n"),
          {10}),
     11: ("hardcoded hex color outside :root",
-         _inject_before("</style>", "h1{ color:#ff0000; }\n"),
+         # The hex literal alone proved the #hex branch but left the
+         # NAMED_COLORS branch (the one Task 9's baselining found
+         # false-FAILing on var(--red)-shaped references) with zero
+         # true-positive coverage - nothing proved a genuine bare named
+         # color literal still trips this check after the var()-masking
+         # fix. "color:red" closes that gap. It still trips exactly
+         # check 11, same as the hex line alone.
+         _inject_before("</style>", "h1{ color:#ff0000; }\nh2{ color:red; }\n"),
          {11}),
 })
 
