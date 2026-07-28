@@ -87,7 +87,128 @@ NOT_CHECKED = [
 # checks
 # --------------------------------------------------------------------------
 
-# (checks are added here by later tasks)
+
+@check(1, 'no <script type="module">', "section 7/section 8.1")
+def c01(ctx):
+    name = 'no <script type="module">'
+    rule = "section 7/section 8.1"
+    return fail_on_hits(
+        1, name, rule,
+        ctx.find(r"""<script[^>]*type\s*=\s*['"]module['"]""", re.I))
+
+
+@check(2, "no ES import/export statements", "section 7")
+def c02(ctx):
+    name = "no ES import/export statements"
+    rule = "section 7"
+    hits = []
+    for i, ln in enumerate(ctx.lines):
+        if re.search(r"^\s*(?:import|export)\s+", ln) and "<script" not in ln:
+            hits.append((i + 1, ln))
+    return fail_on_hits(2, name, rule, hits)
+
+
+@check(3, "no dynamic import()", "section 7")
+def c03(ctx):
+    name = "no dynamic import()"
+    rule = "section 7"
+    return fail_on_hits(3, name, rule, ctx.find(r"\bimport\s*\("))
+
+
+@check(4, "no fetch() or XMLHttpRequest", "section 7")
+def c04(ctx):
+    name = "no fetch() or XMLHttpRequest"
+    rule = "section 7"
+    return fail_on_hits(
+        4, name, rule, ctx.find(r"\bfetch\s*\(|\bXMLHttpRequest\b"))
+
+
+@check(5, "await occurrences (top-level detection is heuristic)", "section 7")
+def c05(ctx):
+    name = "await occurrences (top-level detection is heuristic)"
+    rule = "section 7"
+    # WARN, never FAIL: reliably distinguishing top-level await from awaits
+    # inside async functions needs brace-depth analysis that is not robust
+    # against unusual or minified formatting. Report and let a human judge.
+    return fail_on_hits(5, name, rule, ctx.find(r"\bawait\b"), status=WARN)
+
+
+@check(6, "no <script src=> at all", "section 7 all executable code inlined")
+def c06(ctx):
+    name = "no <script src=> at all"
+    rule = "section 7 all executable code inlined"
+    return fail_on_hits(6, name, rule, ctx.find(r"<script[^>]*\ssrc\s*=", re.I))
+
+
+FONT_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com")
+
+
+def _external_refs(ctx):
+    """Return [(lineno, url, is_link_tag)] for every http(s) resource ref."""
+    out = []
+    for i, ln in enumerate(ctx.lines):
+        for m in re.finditer(r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""",
+                             ln, re.I):
+            if re.search(r"<a\b[^>]*href", ln, re.I) and "<link" not in ln.lower():
+                continue  # anchors are navigation, not resource loads
+            out.append((i + 1, m.group(1), "<link" in ln.lower()))
+        for m in re.finditer(r"url\(\s*['\"]?(https?://[^'\")]+)", ln, re.I):
+            out.append((i + 1, m.group(1), False))
+    return out
+
+
+def _fonts_links(ctx):
+    return [(n, u, is_link) for n, u, is_link in _external_refs(ctx)
+            if is_link and any(h in u for h in FONT_HOSTS)]
+
+
+@check(7, "at most one external ref, and it must be a fonts stylesheet",
+       "section 7/section 6.6")
+def c07(ctx):
+    name = "at most one external ref, and it must be a fonts stylesheet"
+    rule = "section 7/section 6.6"
+    refs = _external_refs(ctx)
+    fonts = _fonts_links(ctx)
+    problems = []
+    for n, url, _ in refs:
+        if not any(h in url for h in FONT_HOSTS):
+            problems.append("line %d: external resource %s" % (n, url[:100]))
+    if len(fonts) > 1:
+        problems.append("%d fonts stylesheets; section 7 sanctions one" % len(fonts))
+    if problems:
+        return Result(7, name, rule, FAIL, problems)
+    return Result(7, name, rule, PASS)
+
+
+@check(8, "no local file references", "section 7 zero external local files")
+def c08(ctx):
+    name = "no local file references"
+    rule = "section 7 zero external local files"
+    hits = []
+    for i, ln in enumerate(ctx.lines):
+        low = ln.lower()
+        if re.search(r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""", ln):
+            if re.search(r"<a\b", low) and "<link" not in low:
+                continue
+            hits.append((i + 1, ln))
+        elif re.search(r"url\(\s*['\"]?(?!data:|https?:|#)[^)'\"]+\.[a-z0-9]{2,5}",
+                       ln, re.I):
+            hits.append((i + 1, ln))
+    return fail_on_hits(8, name, rule, hits)
+
+
+@check(9, "every <img src=> is a data: URI", "section 7")
+def c09(ctx):
+    name = "every <img src=> is a data: URI"
+    rule = "section 7"
+    hits = []
+    for i, ln in enumerate(ctx.lines):
+        for m in re.finditer(r"""<img[^>]*\ssrc\s*=\s*['"]([^'"]*)['"]""",
+                             ln, re.I):
+            if not m.group(1).startswith("data:"):
+                hits.append((i + 1, ln))
+    return fail_on_hits(9, name, rule, hits)
+
 
 @check(16, "output hygiene: DOCTYPE first, </html> last, no prose", "section 8.10")
 def c16(ctx):
@@ -147,6 +268,38 @@ INJECTIONS = {
          lambda html: "```html\n" + html,
          {16}),
 }
+
+INJECTIONS.update({
+    1: ("script tag given type=module",
+        lambda html: html.replace("<script>", '<script type="module">', 1),
+        {1}),
+    2: ("ES import statement in script body",
+        _inject_before("var MAP =", 'import x from "./y.js";\n'),
+        {2}),
+    3: ("dynamic import() call",
+        _inject_before("var MAP =", 'import("./y.js");\n'),
+        {3}),
+    4: ("fetch() call",
+        _inject_before("var MAP =", 'fetch("/data.json");\n'),
+        {4}),
+    5: ("await expression",
+        _inject_before("var MAP =", "await ready;\n"),
+        {5}),
+    6: ("external CDN script src",
+        _inject_before("</head>",
+                       '<script src="https://cdn.example.com/x.js"></script>\n'),
+        {6, 7}),
+    7: ("external non-fonts stylesheet",
+        _inject_before("</head>",
+                       '<link rel="stylesheet" href="https://cdn.example.com/a.css">\n'),
+        {7}),
+    8: ("local relative stylesheet reference",
+        _inject_before("</head>", '<link rel="stylesheet" href="./local.css">\n'),
+        {8}),
+    9: ("img src that is not a data: URI",
+        _inject_before("</body>", '<img src="#" alt="x">\n'),
+        {9}),
+})
 
 
 def run_checks(ctx):
