@@ -1592,18 +1592,34 @@ def _find_matching_close(html, tag_name, search_from):
     seen before the next same-name closing tag increments depth; every
     closing tag decrements it; the match ends when depth returns to 0.
 
-    Returns len(html) if no matching close exists (unterminated element),
-    mirroring how _mask_non_markup treats an unterminated comment - blank
-    to end of document rather than leave the span unresolved."""
+    Returns search_from - i.e. NOTHING beyond the opening tag itself gets
+    treated as resolved - if no matching close exists anywhere in the
+    rest of the document (an unterminated quoted element). This is NOT
+    the same fallback _mask_non_markup uses for an unterminated <script>/
+    <style>/comment (blank to end of document), and an earlier revision
+    of this function wrongly copied that behavior by analogy. The
+    analogy does not hold: <script> and <style> are HTML5 raw-text
+    elements, so an unterminated one genuinely does consume the rest of
+    the document in a browser. A <div>, or any other generic tag
+    _QUOTED_OPEN_RX can match, is not a raw-text element - unclosed
+    markup still renders its siblings and everything after it as normal,
+    visible DOM. Blanking to end-of-document on a single missing closing
+    tag silently dropped every real CTA-verb hit after it from the
+    report - exactly the "tool goes quiet" failure this project exists
+    to prevent, worse than the false-FAIL it would have been reporting
+    instead of hiding. An unresolvable quoted region must fail toward
+    REPORTING the hit, never toward hiding it, so the correct fallback is
+    the same one the base non-greedy regex already had: no matching close
+    found -> strip nothing beyond the opening tag, and let downstream
+    text stand as live, reportable content."""
     open_rx = re.compile(r"<%s\b%s>" % (re.escape(tag_name), _ATTR_RUN), re.I)
     close_rx = re.compile(r"</%s\s*>" % re.escape(tag_name), re.I)
     depth = 1
     pos = search_from
-    n = len(html)
     while depth > 0:
         next_close = close_rx.search(html, pos)
         if next_close is None:
-            return n
+            return search_from
         next_open = open_rx.search(html, pos, next_close.start())
         if next_open is not None:
             depth += 1
@@ -1642,13 +1658,19 @@ def _strip_quoted(html):
     pieces = []
     kept = 0
     scan = 0
+    # No "already inside a previously-stripped span" guard is needed here:
+    # scan and kept are always advanced together to the same close_end, so
+    # each search starts exactly where the previous stripped span ended,
+    # and re.search(html, scan) cannot return a match starting before
+    # scan. A nested quoted-marked element inside an already-stripped
+    # outer span (e.g. <div class="quoted"><span class="quoted">...) is
+    # therefore never independently found at all - it is already behind
+    # the search cursor, consumed as part of the outer element's own
+    # depth-tracked strip - so there is nothing left to double-process.
+    # (An earlier revision carried a dead `if m.start() < kept` branch
+    # that could never fire under this invariant; removed rather than
+    # left as an ambiguous guard against a case that cannot occur.)
     for m in iter(lambda: _QUOTED_OPEN_RX.search(html, scan), None):
-        if m.start() < kept:
-            # already inside a previously-stripped span (a nested quoted
-            # element caught by the outer element's own depth-tracked
-            # strip) - do not double-process it.
-            scan = m.end()
-            continue
         close_end = _find_matching_close(html, m.group(1), m.end())
         pieces.append(html[kept:m.start()])
         pieces.append(_blank_run(html[m.start():close_end]))
