@@ -3352,7 +3352,113 @@ def self_test():
     print("")
     print("%d/%d checks provably detect their violation"
           % (proven, len(registered)))
+
+    print("")
+    all_pass = [r for r in base_results if r.status == PASS]
+    clean_prompt = repair_prompt(all_pass)
+    if clean_prompt == "":
+        print("PROVEN   --prompt emits nothing for an all-PASS result set")
+    else:
+        print("BROKEN   --prompt emitted output for an all-PASS result set")
+        ok = False
+
+    # base_results is the FIXTURE's own real result set (0 FAIL, 1 WARN -
+    # check 7's two false-positive traps). This is a genuine WARN-only
+    # run, not a synthetic one, so it doubles as the WARN-only case.
+    warn_only_prompt = repair_prompt(base_results)
+    if (warn_only_prompt != ""
+            and "section 7" in warn_only_prompt
+            and "Return the corrected complete file" not in warn_only_prompt):
+        print("PROVEN   --prompt on a WARN-only run surfaces the warnings "
+              "without demanding a rewrite")
+    else:
+        print("BROKEN   --prompt mishandled a WARN-only run")
+        ok = False
+
+    broken = INJECTIONS[6][1](FIXTURE)
+    dirty_prompt = repair_prompt(run_checks(Ctx(broken, "<self-test>",
+                                                expect="selftest")))
+    if ("section 7" in dirty_prompt
+            and "Return the corrected complete file" in dirty_prompt):
+        print("PROVEN   --prompt cites the violated rule and demands a full file")
+    else:
+        print("BROKEN   --prompt output missing rule citation or instruction")
+        ok = False
+
     return 0 if ok else 1
+
+
+def repair_prompt(results):
+    """Paste-ready model repair instruction, built from the same Result
+    objects report() prints. Returns "" when there is nothing at all to
+    say - no FAIL and no WARN - so a clean run of --prompt produces no
+    output whatsoever, not even a header.
+
+    FAIL and WARN are not the same kind of claim and must not be
+    presented to the model as if they were. A FAIL is a proven
+    violation of a checkable rule from GENERATOR_PACKAGE.md - the file
+    must be corrected. A WARN is advisory: several checks degrade to
+    WARN specifically because they could NOT prove a violation (5's
+    top-level-await heuristic; 7/8/9's masked-region hits, which may be
+    constructed markup or documentation rather than live content; 13
+    without --map, which cannot tell leakage from legitimate vocabulary;
+    12, which is WARN-only BY DESIGN and can never FAIL at all - see its
+    own docstring). Telling a model it "failed" a check that only WARNed
+    invites it to mangle correct output chasing a violation that was
+    never established. So the count sentence at the top of this prompt
+    counts FAILs only, and WARNs are always kept in a clearly separate,
+    clearly-labelled section the model is told it may legitimately leave
+    unchanged.
+
+    A run with zero FAIL but one or more WARN is a real, common case
+    (checks 5/7/8/9/12/13 are built to land there) and is not "nothing to
+    report" - silently emitting nothing would hide information the
+    operator asked for. It gets its own opening line, making explicit
+    that nothing failed and that human adjudication, not a model rewrite,
+    is what these need; the "return the corrected complete file"
+    instruction below is omitted in that case, since nothing has been
+    shown to need correcting."""
+    fails = [r for r in results if r.status == FAIL]
+    warns = [r for r in results if r.status == WARN]
+    if not fails and not warns:
+        return ""
+    lines = []
+    if fails:
+        lines.append(
+            "Your output failed %d acceptance check%s from "
+            "GENERATOR_PACKAGE.md section 8:"
+            % (len(fails), "" if len(fails) == 1 else "s"))
+        lines.append("")
+        for r in fails:
+            lines.append("  %s - %s" % (r.rule, r.name))
+            for d in r.details:
+                lines.append("      %s" % d)
+        if warns:
+            lines.append("")
+            lines.append(
+                "Warnings - these are not proven violations; review them, "
+                "but the model may leave them as written if they are "
+                "correct as-is:")
+            for r in warns:
+                lines.append("  %s - %s" % (r.rule, r.name))
+                for d in _cap(r.details, 3):
+                    lines.append("      %s" % d)
+        lines += ["",
+                  "Return the corrected complete file. Do not return a "
+                  "diff, a fragment, or an explanation."]
+    else:
+        lines.append(
+            "No acceptance check failed. %d check%s produced a warning "
+            "that needs human adjudication, not model repair - these are "
+            "not proven violations, and the file should not be rewritten "
+            "to silence them without review:"
+            % (len(warns), "" if len(warns) == 1 else "s"))
+        lines.append("")
+        for r in warns:
+            lines.append("  %s - %s" % (r.rule, r.name))
+            for d in _cap(r.details, 3):
+                lines.append("      %s" % d)
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------
@@ -3410,7 +3516,12 @@ def main(argv=None):
 
     ctx = Ctx(html, args.dashboard, map_text, args.reference, args.expect)
     results = run_checks(ctx)
-    report(results, args.dashboard)
+    if args.prompt:
+        text = repair_prompt(results)
+        if text:
+            print(text)
+    else:
+        report(results, args.dashboard)
     return 1 if any(r.status == FAIL for r in results) else 0
 
 
