@@ -1531,6 +1531,186 @@ def c11(ctx):
     return Result(11, name, rule, PASS)
 
 
+# --------------------------------------------------------------------------
+# checks 12-13: section 8.6(c) (no CTA verbs outside quoted blocks) and
+# section 8.7 (no reference-example vocabulary absent from the map)
+# --------------------------------------------------------------------------
+
+# Stems, not whole words: real copy inflects them ("Launching", "Published",
+# "Shipping"), so each stem is followed by \w* to absorb the inflection.
+# Leading \b keeps this from firing mid-word ("relationship" does not
+# contain a word-boundary immediately before "ship" - the character before
+# it, "n", is itself a word character, so \bship never matches there).
+CTA_PATTERN = r"\b(?:launch|ship|shipping|shipped|publish|buy|buys|buying|subscrib)\w*\b"
+
+# section 8.7's reference (homelab) example vocabulary. This is a
+# PROVENANCE list, not a ban list: ordinary English words on it ("backup",
+# "restore", "monitoring") are legitimate in a research dashboard that
+# happens to discuss backups. c13 only flags a hit that is BOTH absent
+# from the current map AND not otherwise explained - see c13.
+REFERENCE_VOCAB = ["homelab", "provisioning", "backup", "restore", "dotfiles",
+                   "monitoring", "showcase", "adoption-reality", "community pull"]
+
+
+def _strip_quoted(html):
+    """Remove elements marked as quoted. Returns (text, markup_found).
+
+    Blanking is offset-preserving - the same idiom _mask_non_markup uses
+    via _blank_run - so a matched quoted element's characters (including
+    its own opening/closing tags) become spaces rather than being deleted.
+    A naive re.sub(..., " ") that COLLAPSES a multi-line quoted block to a
+    single space character would shift every offset and line number after
+    it in the returned text, which would make region_kind_at and
+    lineno_at (both called against these offsets by c12) silently
+    misattribute region and cite the wrong line for anything downstream of
+    a multi-line quoted block. That is exactly the kind of wrong citation
+    this project cannot ship, so this differs from the literal starter
+    snippet on that one point."""
+    if not re.search(r"""(?:class\s*=\s*['"][^'"]*\bquoted\b|data-quoted)""",
+                     html, re.I):
+        return html, False
+    stripped = re.sub(
+        r"""<(\w+)[^>]*(?:class\s*=\s*['"][^'"]*\bquoted\b[^'"]*['"]"""
+        r"""|data-quoted)[^>]*>.*?</\1\s*>""",
+        lambda m: _blank_run(m.group(0)), html, flags=re.S | re.I)
+    return stripped, True
+
+
+@check(12, "no call-to-action verbs outside quoted blocks", "section 8.6(c)")
+def c12(ctx):
+    """section 8.6(c): no launch/ship/publish/buy/subscribe verb outside a
+    quoted block.
+
+    Region-graded exactly like checks 7-9: a hit that exists only inside a
+    <script> body, a <style> body or an HTML comment is not live
+    user-facing content, so it is reported at WARN with the adjudication
+    note rather than counted toward the live-markup verdict below.
+
+    Within live markup, section 8.6(c)'s own "except inside a quoted
+    block" carve-out needs the dashboard to actually MARK quoted regions
+    in the DOM (a "quoted" class or a data-quoted attribute) before a
+    match can be told apart from a live call to action:
+      - that markup exists somewhere in the file: quoted regions are
+        stripped first, so anything left over is a real, unexcused hit -
+        FAIL.
+      - that markup does not exist anywhere: a quoted constraint and a
+        live CTA are indistinguishable from text alone - WARN, listed for
+        a human to adjudicate, rather than guessed either way."""
+    name = "no call-to-action verbs outside quoted blocks"
+    rule = "section 8.6(c)"
+    text, marked = _strip_quoted(ctx.html)
+    cta_rx = re.compile(CTA_PATTERN, re.I)
+    live_hits = []
+    soft = []
+    seen_live = set()
+    seen_soft = set()
+    for m in cta_rx.finditer(text):
+        lineno = ctx.lineno_at(m.start())
+        kind = ctx.region_kind_at(m.start())
+        if kind is not None:
+            if lineno in seen_soft:
+                continue
+            seen_soft.add(lineno)
+            soft.append("line %d: %s (inside %s - %s)"
+                        % (lineno, ctx.lines[lineno - 1].strip()[:120],
+                           _REGION_LABEL[kind], _ADJUDICATE))
+            continue
+        if lineno in seen_live:
+            continue
+        seen_live.add(lineno)
+        live_hits.append((lineno, ctx.lines[lineno - 1]))
+    soft = _cap(soft)
+    if not live_hits and not soft:
+        return Result(12, name, rule, PASS)
+    if marked:
+        # quoted regions are markable and were stripped: remaining live
+        # hits are real.
+        if live_hits:
+            return Result(12, name, rule, FAIL, line_details(live_hits) + soft)
+        return Result(12, name, rule, WARN, soft)
+    # no quoted-region markup exists anywhere in the file, so a quoted
+    # constraint cannot be told apart from a live call to action.
+    if live_hits:
+        return Result(12, name, rule, WARN,
+                      ["no quoted-region markup (class=\"quoted\" or "
+                       "data-quoted); hits below need human adjudication"]
+                      + line_details(live_hits) + soft)
+    return Result(12, name, rule, WARN, soft)
+
+
+@check(13, "no reference-example vocabulary absent from the source map",
+       "section 8.7")
+def c13(ctx):
+    """section 8.7: no reference-example (homelab) vocabulary except where
+    present in THIS map.
+
+    This is a PROVENANCE test, not a wordlist ban - see REFERENCE_VOCAB.
+    A word's every occurrence is suppressed silently, in every region,
+    the moment it is found anywhere in --map's text: at that point it is
+    this map's own vocabulary, not a leaked reference-example word, and
+    section 8.7 has nothing to say about it.
+
+    For whatever survives that suppression, region-grading applies first
+    (a hit that exists only inside a <script> body, a <style> body or an
+    HTML comment is not live content - WARN, same as checks 7-9), and
+    only then does the live/no-map-given distinction from the docstring
+    below decide FAIL vs WARN. --map turns "this word may be legitimate
+    English" into a checkable fact; without it the check cannot tell
+    leakage from legitimate usage and always WARNs instead of guessing.
+
+    Word-boundary note: several list entries ("backup", "restore",
+    "monitoring") can sit inside a hyphenated CSS custom-property token
+    such as --backup-tint, where \\b still matches on either side of the
+    hyphen (Task 4's `\\bred\\b` inside `--banner-red` bug). A :root token
+    declaration lives inside a <style> body by construction, so the
+    region grading above already demotes that hit to WARN rather than
+    letting it FAIL - the fix is the existing region layer, not a new
+    hyphen-aware pattern. Verified empirically in the report, not just
+    reasoned about."""
+    name = "no reference-example vocabulary absent from the source map"
+    rule = "section 8.7"
+    if ctx.reference:
+        return Result(13, name, rule, SKIP,
+                      ["--reference: this file IS the reference example"])
+    live_hits = []
+    soft = []
+    seen_live = set()
+    seen_soft = set()
+    for word in REFERENCE_VOCAB:
+        rx = re.compile(r"\b%s\b" % re.escape(word), re.I)
+        if ctx.map_text and rx.search(ctx.map_text):
+            continue  # present in THIS map, so not leakage (section 8.7)
+        for m in rx.finditer(ctx.html):
+            lineno = ctx.lineno_at(m.start())
+            kind = ctx.region_kind_at(m.start())
+            if kind is not None:
+                key = (lineno, word)
+                if key in seen_soft:
+                    continue
+                seen_soft.add(key)
+                soft.append("line %d: %r (inside %s - %s)"
+                            % (lineno, word, _REGION_LABEL[kind], _ADJUDICATE))
+                continue
+            key = (lineno, word)
+            if key in seen_live:
+                continue
+            seen_live.add(key)
+            live_hits.append(
+                (lineno, "%r  %s" % (word, ctx.lines[lineno - 1].strip())))
+    soft = _cap(soft)
+    if not live_hits and not soft:
+        return Result(13, name, rule, PASS)
+    if live_hits:
+        if ctx.map_text:
+            return Result(13, name, rule, FAIL, line_details(live_hits) + soft)
+        return Result(13, name, rule, WARN,
+                      ["no --map given, so leakage cannot be told from "
+                       "legitimate vocabulary; hits below need human "
+                       "adjudication"] + line_details(live_hits) + soft)
+    # only masked-region hits survive: not live user-facing content
+    return Result(13, name, rule, WARN, soft)
+
+
 @check(16, "output hygiene: DOCTYPE first, </html> last, no prose", "section 8.10")
 def c16(ctx):
     problems = []
@@ -1697,6 +1877,15 @@ INJECTIONS.update({
     11: ("hardcoded hex color outside :root",
          _inject_before("</style>", "h1{ color:#ff0000; }\n"),
          {11}),
+})
+
+INJECTIONS.update({
+    12: ("call-to-action verb in body copy",
+         _inject_before("</body>", "<p>Buy now and subscribe today.</p>\n"),
+         {12}),
+    13: ("reference-example vocabulary leak",
+         _inject_before("</body>", "<p>homelab provisioning notes</p>\n"),
+         {13}),
 })
 
 
