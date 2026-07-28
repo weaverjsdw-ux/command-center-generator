@@ -75,8 +75,15 @@ def _mask_non_markup(html):
     The copy is offset-preserving - same length, same newline positions -
     so a match offset in it still yields the correct line number when
     counted against the original document.
+
+    Returns (masked_html, regions), where regions is the ordered list of
+    (start, end, kind) spans that were blanked and kind is one of
+    "script", "style" or "comment". Callers use the spans to say *which*
+    kind of region a reference was found in, so a masked-region hit can
+    be reported for human adjudication instead of dropped silently.
     """
     pieces = []
+    regions = []
     kept = 0    # next index of html not yet emitted
     scan = 0    # next index to search from
     while True:
@@ -90,7 +97,9 @@ def _mask_non_markup(html):
             # page actually renders.
             stop = len(html) if end == -1 else end + 3
             blank_from, blank_to, scan = m.start(), stop, stop
+            kind = "comment"
         elif m.group(1).lower() in _MASKED_ELEMENTS:
+            kind = m.group(1).lower()
             close_rx = re.compile(r"</%s\s*>" % re.escape(m.group(1)), re.I)
             close = close_rx.search(html, m.end())
             if close is None:
@@ -104,9 +113,11 @@ def _mask_non_markup(html):
             continue
         pieces.append(html[kept:blank_from])
         pieces.append(_blank_run(html[blank_from:blank_to]))
+        if blank_to > blank_from:
+            regions.append((blank_from, blank_to, kind))
         kept = blank_to
     pieces.append(html[kept:])
-    return "".join(pieces)
+    return "".join(pieces), regions
 
 
 class Ctx:
@@ -118,14 +129,29 @@ class Ctx:
         self.reference = reference
         self.expect = expect
         self._masked = None
+        self._regions = None
 
     def masked_html(self):
         """self.html with non-markup regions blanked out (see
         _mask_non_markup). Computed once and cached: it is O(document) to
         build and more than one check scans it."""
         if self._masked is None:
-            self._masked = _mask_non_markup(self.html)
+            self._masked, self._regions = _mask_non_markup(self.html)
         return self._masked
+
+    def region_kind_at(self, offset):
+        """Which kind of non-markup region ("script", "style", "comment")
+        contains this document offset, or None if the offset is in live
+        markup."""
+        self.masked_html()
+        for start, end, kind in self._regions:
+            if start <= offset < end:
+                return kind
+        return None
+
+    def lineno_at(self, offset):
+        """1-based physical line number of a document offset."""
+        return self.html.count("\n", 0, offset) + 1
 
     def find(self, pattern, flags=0):
         rx = re.compile(pattern, flags)
@@ -181,27 +207,66 @@ NOT_CHECKED = [
 _TAG_RX = re.compile(r"<([a-zA-Z][\w-]*)\b" + _ATTR_RUN + ">")
 
 
+def _tags_in(text):
+    """Yield (start_offset, tag_name_lower, tag_text) for every opening
+    tag in text. Matching runs over the whole text, not line-by-line: a
+    tag whose closing '>' lands on a different physical line from its
+    '<' is ordinary, valid HTML (attribute values wrap), and a per-line
+    scan would never see it as one tag at all."""
+    for m in _TAG_RX.finditer(text):
+        yield m.start(), m.group(1).lower(), m.group(0)
+
+
 def _all_tags(ctx):
     """Yield (lineno, tag_name_lower, tag_text) for every opening tag in
-    the document's *markup* regions.
+    the document's *live markup*.
 
-    Two properties, each of which a previous shape of this function got
-    wrong:
+    Matching runs over the masked document, so tag-shaped text inside a
+    <script> body, a <style> body or an HTML comment is not mistaken for
+    a live resource reference. Line numbers are still counted against
+    ctx.html, which is exact because masking is offset-preserving."""
+    for start, name, text in _tags_in(ctx.masked_html()):
+        yield ctx.lineno_at(start), name, text
 
-    - Matching runs over the whole document text, not line-by-line: a tag
-      whose closing '>' lands on a physical line different from its '<'
-      is ordinary, valid HTML (attribute values wrap), and a per-line
-      scan would silently never see it as one tag at all.
 
-    - Matching runs over the *masked* document, so tag-shaped text inside
-      a <script> body, a <style> body or an HTML comment is not mistaken
-      for a live resource reference. Line numbers are still counted
-      against ctx.html, which is exact because masking is
-      offset-preserving.
-    """
-    for m in _TAG_RX.finditer(ctx.masked_html()):
-        lineno = ctx.html.count("\n", 0, m.start()) + 1
-        yield lineno, m.group(1).lower(), m.group(0)
+def _masked_region_tags(ctx):
+    """Yield (start_offset, tag_name_lower, tag_text, region_kind) for
+    tag-shaped text that exists ONLY in a non-markup region.
+
+    These are not live markup and must not FAIL - but they are not
+    nothing either. A dashboard that builds its DOM in template literals
+    keeps most of its real markup here, so a genuine CDN reference can
+    live in this set. Callers report these at WARN for human
+    adjudication rather than dropping them.
+
+    Offsets, not line numbers, are yielded: scanning raw text produces
+    matches that can span many lines of JavaScript, so callers cite the
+    line of the *attribute they matched* rather than the line the bogus
+    match happened to start on."""
+    live = set(start for start, _, _ in _tags_in(ctx.masked_html()))
+    for start, name, text in _tags_in(ctx.html):
+        if start in live:
+            continue
+        kind = ctx.region_kind_at(start)
+        if kind is None:
+            continue
+        yield start, name, text, kind
+
+
+_REGION_LABEL = {
+    "script": "a <script> body",
+    "style": "a <style> body",
+    "comment": "an HTML comment",
+}
+
+_ADJUDICATE = ("may be constructed markup or documentation; "
+               "needs human adjudication")
+
+
+def _cap(items, limit=10):
+    if len(items) <= limit:
+        return items
+    return items[:limit] + ["... and %d more" % (len(items) - limit)]
 
 
 def _merge_hits(*hit_lists):
@@ -317,20 +382,22 @@ def _is_font_host(url):
     return host in FONT_HOSTS
 
 
+_REF_ATTR_RX = re.compile(
+    r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""", re.I)
+
+
 def _external_refs(ctx):
-    """Return [(lineno, url, is_link_tag)] for every http(s) resource ref.
-    Tag matching is document-wide (via _all_tags), so a <link>/<script>
-    tag whose attributes wrap onto a second line is still recognized as
-    one tag, and per-tag rather than per-line, so an <a href> sharing
-    text with a <link>/<script>/<img> can't hide or absorb the other's
-    reference."""
+    """Return [(lineno, url, is_link_tag)] for every http(s) resource ref
+    in LIVE markup. Tag matching is document-wide (via _all_tags), so a
+    <link>/<script> tag whose attributes wrap onto a second line is still
+    recognized as one tag, and per-tag rather than per-line, so an
+    <a href> sharing text with a <link>/<script>/<img> can't hide or
+    absorb the other's reference."""
     out = []
-    attr_rx = re.compile(r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""",
-                         re.I)
     for lineno, tag_name, tag_text in _all_tags(ctx):
         if tag_name == "a":
             continue  # anchors are navigation, not resource loads
-        attr_m = attr_rx.search(tag_text)
+        attr_m = _REF_ATTR_RX.search(tag_text)
         if attr_m:
             out.append((lineno, attr_m.group(1), tag_name == "link"))
     # The CSS url() scan stays on RAW lines on purpose. Its two live
@@ -340,6 +407,24 @@ def _external_refs(ctx):
     for i, ln in enumerate(ctx.lines):
         for m in re.finditer(r"url\(\s*['\"]?(https?://[^'\")]+)", ln, re.I):
             out.append((i + 1, m.group(1), False))
+    return out
+
+
+def _masked_region_external_refs(ctx):
+    """Return [(lineno, url, region_kind)] for http(s) resource refs that
+    exist only inside a script body, a style body or an HTML comment.
+
+    Every match in the tag is reported, not just the first: a raw-text
+    match can span several template-literal tags at once, and the point
+    of this path is that nothing is dropped silently. The cited line is
+    the line of the URL itself, so the citation always names a line that
+    actually contains it."""
+    out = []
+    for start, tag_name, tag_text, kind in _masked_region_tags(ctx):
+        if tag_name == "a":
+            continue  # anchors are navigation, not resource loads
+        for m in _REF_ATTR_RX.finditer(tag_text):
+            out.append((ctx.lineno_at(start + m.start(1)), m.group(1), kind))
     return out
 
 
@@ -353,32 +438,72 @@ def _fonts_links(ctx):
 def c07(ctx):
     name = "at most one external ref, and it must be a fonts stylesheet"
     rule = "section 7/section 6.6"
-    refs = _external_refs(ctx)
     fonts = _fonts_links(ctx)
     problems = []
-    for n, url, _ in refs:
+    reported = set()
+    for n, url, _ in _external_refs(ctx):
         if not _is_font_host(url):
             problems.append("line %d: external resource %s" % (n, url[:100]))
+            reported.add((n, url))
     if len(fonts) > 1:
         problems.append("%d fonts stylesheets; section 7 sanctions one" % len(fonts))
+    # Refs found only in a script/style body or an HTML comment are not
+    # live markup, so they cannot be a FAIL. They are not nothing either:
+    # a dashboard that builds its DOM in template literals keeps most of
+    # its real markup there, so a genuine CDN reference can hide in this
+    # set alongside documentation. Report at WARN and let a human decide.
+    # Fonts hosts are NOT exempted here: the live path already counts
+    # sanctioned fonts links, and exempting them here would silently
+    # swallow a second one injected at runtime.
+    soft = []
+    for n, url, kind in _masked_region_external_refs(ctx):
+        if (n, url) in reported:
+            continue        # same reference already reported as a FAIL
+        reported.add((n, url))
+        soft.append("line %d: external resource %s (inside %s - %s)"
+                    % (n, url[:100], _REGION_LABEL[kind], _ADJUDICATE))
+    soft = _cap(soft)
     if problems:
-        return Result(7, name, rule, FAIL, problems)
+        return Result(7, name, rule, FAIL, problems + soft)
+    if soft:
+        return Result(7, name, rule, WARN, soft)
     return Result(7, name, rule, PASS)
 
 
+_LOCAL_ATTR_RX = re.compile(r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""")
+
+# Same rule as _LOCAL_ATTR_RX but capturing the whole quoted value, so a
+# masked-region WARN can cite the reference itself rather than a
+# raw-text tag match that may span many lines of JavaScript.
+_LOCAL_REF_RX = re.compile(
+    r"""(?:src|href)\s*=\s*['"]((?:\./|\.\./|/)[^'"]*)['"]""")
+
+
 def _local_ref_tags(ctx):
-    """Yield (lineno, tag_text) for every non-anchor tag carrying a local
-    src=/href=, document-wide (via _all_tags) so a tag whose attributes
-    wrap onto a second line is still recognized as one tag, and per-tag
-    so an <a href> sharing text with a real local <link>/<script>/<img>
-    can't hide or falsely absorb it."""
-    local_attr_rx = re.compile(
-        r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""")
+    """Yield (lineno, tag_text) for every non-anchor LIVE tag carrying a
+    local src=/href=, document-wide (via _all_tags) so a tag whose
+    attributes wrap onto a second line is still recognized as one tag,
+    and per-tag so an <a href> sharing text with a real local
+    <link>/<script>/<img> can't hide or falsely absorb it."""
     for lineno, tag_name, tag_text in _all_tags(ctx):
         if tag_name == "a":
             continue  # anchors are navigation, not resource loads
-        if local_attr_rx.search(tag_text):
+        if _LOCAL_ATTR_RX.search(tag_text):
             yield lineno, tag_text
+
+
+def _masked_region_local_refs(ctx):
+    """Return [(lineno, ref_value, region_kind)] for local src=/href=
+    references that exist only inside a script body, a style body or an
+    HTML comment. Cited at the line of the reference itself - see
+    _masked_region_external_refs for why."""
+    out = []
+    for start, tag_name, tag_text, kind in _masked_region_tags(ctx):
+        if tag_name == "a":
+            continue  # anchors are navigation, not resource loads
+        for m in _LOCAL_REF_RX.finditer(tag_text):
+            out.append((ctx.lineno_at(start + m.start(1)), m.group(1), kind))
+    return out
 
 
 @check(8, "no local file references", "section 7 zero external local files")
@@ -393,7 +518,23 @@ def c08(ctx):
         if re.search(r"url\(\s*['\"]?(?!data:|https?:|#)[^)'\"]+\.[a-z0-9]{2,5}",
                      ln, re.I):
             hits.setdefault(i + 1, ln)
-    return fail_on_hits(8, name, rule, sorted(hits.items()))
+    problems = line_details(sorted(hits.items()))
+    # Masked-region references: WARN, never FAIL - same reasoning as
+    # check 7 above.
+    soft = []
+    seen = set()
+    for lineno, ref, kind in _masked_region_local_refs(ctx):
+        if lineno in hits or (lineno, ref) in seen:
+            continue        # same reference already reported as a FAIL
+        seen.add((lineno, ref))
+        soft.append("line %d: local reference %s (inside %s - %s)"
+                    % (lineno, ref[:100], _REGION_LABEL[kind], _ADJUDICATE))
+    soft = _cap(soft)
+    if problems:
+        return Result(8, name, rule, FAIL, problems + soft)
+    if soft:
+        return Result(8, name, rule, WARN, soft)
+    return Result(8, name, rule, PASS)
 
 
 @check(9, "every <img src=> is a data: URI", "section 7")
@@ -524,23 +665,63 @@ def run_checks(ctx):
     return [fn(ctx) for _, _, _, fn in CHECKS]
 
 
-def _tripped(html):
-    ctx = Ctx(html, "<self-test>")
-    return set(r.num for r in run_checks(ctx) if r.status in (FAIL, WARN))
+_SEVERITY = {PASS: 0, SKIP: 0, WARN: 1, FAIL: 2}
+
+
+def _statuses(html):
+    return dict((r.num, r.status) for r in run_checks(Ctx(html, "<self-test>")))
+
+
+def _tripped(html, baseline=None):
+    """Check numbers whose status is worse on this document than on the
+    baseline.
+
+    The fixture is deliberately no longer all-PASS: it carries
+    false-positive traps (a tag inside a JS template literal, a tag
+    inside an HTML comment) that checks 7/8 are supposed to report at
+    WARN. Grading an injection by the raw set of non-PASS checks would
+    make every injection inherit those baseline WARNs, and no expected
+    set could stay exact. Grading by what an injection makes *worse*
+    keeps every expected set exact and, unlike widening each expected set
+    by the baseline, still proves the WARN -> FAIL transition on the very
+    checks this matters for."""
+    base = baseline or {}
+    worse = set()
+    for num, status in _statuses(html).items():
+        if _SEVERITY[status] > _SEVERITY.get(base.get(num, PASS), 0):
+            worse.add(num)
+    return worse
 
 
 def self_test():
-    baseline = _tripped(FIXTURE)
     print("verify.py --self-test")
     print("")
     ok = True
-    if baseline:
-        print("BASELINE NOT CLEAN: fixture trips checks %s" % sorted(baseline))
-        print("The synthetic fixture must pass every check before injection")
+    base_results = run_checks(Ctx(FIXTURE, "<self-test>"))
+    base_fail = [r for r in base_results if r.status == FAIL]
+    base_warn = [r for r in base_results if r.status == WARN]
+    if base_fail:
+        print("BASELINE NOT CLEAN: fixture FAILs checks %s"
+              % sorted(r.num for r in base_fail))
+        for r in base_fail:
+            for d in r.details:
+                print("    %s" % d)
+        print("The synthetic fixture must produce no FAIL before injection")
         print("tests mean anything. Fix the fixture or the check.")
         return 1
-    print("baseline: synthetic fixture trips 0 checks")
+    print("baseline: synthetic fixture produces 0 FAIL")
+    if base_warn:
+        print("")
+        print("baseline WARN, expected: the fixture carries deliberate")
+        print("false-positive traps - a tag inside a JS template literal and")
+        print("a tag inside an HTML comment. Neither is live markup, so")
+        print("neither may FAIL; both must stay visible rather than vanish.")
+        for r in base_warn:
+            print("  WARN %02d  %s" % (r.num, r.name))
+            for d in r.details:
+                print("           %s" % d)
     print("")
+    baseline = dict((r.num, r.status) for r in base_results)
     registered = sorted(num for num, _, _, _ in CHECKS)
     proven = 0
     for num in registered:
@@ -549,14 +730,14 @@ def self_test():
             ok = False
             continue
         desc, transform, expected = INJECTIONS[num]
-        actual = _tripped(transform(FIXTURE))
+        actual = _tripped(transform(FIXTURE), baseline)
         if actual == expected:
             print("PROVEN   %02d  %s" % (num, desc))
             proven += 1
         else:
             print("BROKEN   %02d  %s" % (num, desc))
-            print("             expected checks %s to trip, got %s"
-                  % (sorted(expected), sorted(actual)))
+            print("             expected checks %s to worsen against the "
+                  "baseline, got %s" % (sorted(expected), sorted(actual)))
             ok = False
     print("")
     print("%d/%d checks provably detect their violation"
