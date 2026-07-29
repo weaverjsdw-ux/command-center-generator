@@ -115,17 +115,17 @@ is not a benchmark and not a claim about any of these models in general.
 
 **It needs a frontier-class model, and that is measured rather than assumed.** `qwen3.5:9b` ingested
 the full prompt — 10,787 prompt tokens, no truncation — generated for 11.9 minutes, and stopped with
-`done_reason: "stop"`, believing it was finished. It produced 14,533 characters against Opus's
-88,563 bytes. The content was right: real asset codes pulled from the map, nothing hallucinated. The
-structure was not. No `<body>` opening tag, `<head>` never closed, a second `<style>` opened without
+`done_reason: "stop"`, believing it was finished. It produced 14,544 bytes against Opus's 88,563. The
+content was right: real asset codes pulled from the map, nothing hallucinated. The structure was not.
+No `<body>` opening tag, `<head>` never closed, a second `<style>` opened without
 closing the first, and a render script calling `getElementById` on element IDs the model never wrote.
 It authored the data and the rendering logic and never emitted the skeleton for them to attach to. In
 a browser it would throw on its first DOM call.
 
 **A green `--self-test` proves only that the checks detect the violations in `INJECTIONS`.** Nothing
 more. During this build the self-test reported all-green through several genuinely broken states —
-three consecutive rounds of one check's development each reported a full pass over a defect that was
-live the whole time, and the same shape recurred later. It is a regression guard, not a proof of
+three consecutive rounds of the verifier's development each reported a full pass over a defect that
+was live the whole time, and the same shape recurred later. It is a regression guard, not a proof of
 correctness.
 
 **The verifier had been tuned against one model's output shape without anyone intending it.** The
@@ -137,7 +137,8 @@ for each claim, which is better behavior, not worse. Both were fixed before any 
 recorded. Every round of adversarial review in this build ran against synthetic fixtures and
 hand-built attack inputs, and none of them surfaced either bug; one real foreign generation surfaced
 both at once. The same pattern had already shown up once: baselining the verifier against the two
-committed dashboards produced 40 check-11 failures, and all 40 were bugs in the checker.
+committed dashboards tripped check 11 on both, 40 flagged declarations in total, and every one of the
+40 was a bug in the checker rather than a defect in the dashboard.
 
 **Check 12 reports, it does not judge.** It lists call-to-action verbs, and its pattern is stem-based,
 so it also matches negations and descriptive inflections — "No launch committed", "No commitment to
