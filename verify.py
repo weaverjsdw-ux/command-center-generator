@@ -836,6 +836,38 @@ class Ctx:
                 return kind
         return None
 
+    def comment_spans(self):
+        """[(start, end)] of every top-level HTML comment _mask_non_markup
+        found - i.e. every '<!--...-->' that is NOT nested inside a
+        <script> or <style> body. Those bodies are each masked as ONE
+        "script"/"style" region (the scanner jumps straight from the
+        opening tag to the matching close, per _mask_non_markup), so a
+        literal "<!--" sitting inside a JS string or template literal is
+        never separately recorded here - it is simply part of the script
+        region, never inspected as a comment opener.
+
+        This is why check 18's _attestation uses this instead of its own
+        raw sequential '<!--' / '-->' pairing: a naive forward scan that
+        pairs each '<!--' with the NEXT '-->' anywhere in the raw
+        document is consuming and order-dependent - one stray '<!--'
+        inside an earlier <script> string desynchronizes every pairing
+        after it, potentially swallowing the real attestation's own
+        terminator into some earlier, unrelated span and making the
+        genuine block invisible. _mask_non_markup already solved this
+        correctly for every other check that needs "where are the real
+        comments," so check 18 reuses it rather than re-deriving a
+        second, weaker version of the same answer.
+
+        Returns spans only, not blanked text - _attestation still reads
+        html[start:end] from the ORIGINAL document to test a comment's
+        shape and pull its claims. Using the *blanked* text instead
+        (ctx.masked_html()'s return value) would erase the very
+        attestation comment this check exists to read, since a genuine
+        SELF-CHECK block IS a comment; only the boundary metadata is
+        reused here, never the redacted content."""
+        self.masked_html()
+        return [(s, e) for s, e, k in self._regions if k == "comment"]
+
     def lineno_at(self, offset):
         """1-based physical line number of a document offset."""
         return self.html.count("\n", 0, offset) + 1
@@ -2579,8 +2611,10 @@ def c16(ctx):
 # whatever punctuation happens to follow it in the rendered markup).
 EXPECTATIONS = {
     "selftest": {
-        "codes": ["AAA-1"],
-        "ranks": {"AAA-1": 1},
+        # BBB-2/rank "2" is a quoted-rank regression guard (Task 11b) -
+        # see the comment above FIXTURE's own MAP literal for why.
+        "codes": ["AAA-1", "BBB-2"],
+        "ranks": {"AAA-1": 1, "BBB-2": 2},
         "banner": "",
     },
     "research": {
@@ -2994,6 +3028,56 @@ def _map_entries(body):
     return spans
 
 
+# Matches a live `rank:` field's VALUE, bare or quoted: `rank:4`,
+# `rank: 4`, `rank:"4"`, `rank:'4'`. Task 11b's cross-model run proved a
+# faithful dashboard can store a rank as a quoted string - nothing in
+# section 8.4/8.5 mandates one shape over the other - and the original
+# `rank\W+%d\b` search, run only against REDACTED text, went blind the
+# moment a rank was quoted: `_redact_map_text` blanks every character of
+# a string span, quotes and digits alike, so `rank:"3"` became
+# `rank:   ` in redacted text with no digit left to match at all. Every
+# quoted-rank pairing then read as "not recorded at rank N" on data that
+# was faithfully recorded.
+#
+# The fix mirrors code_rx immediately below, on purpose: match the VALUE
+# against RAW text (redaction would erase a quoted digit exactly like it
+# erases a quoted code), capture whichever alternative matched with
+# re.findall's own grouping, and separately require the *keyword*
+# "rank" itself to be live - not the whole match - by checking the
+# REDACTED text at the same offset. That split is exactly what closes
+# the decoy hole without reopening it: in every one of Task 7's three
+# confirmed decoy shapes (a regex literal, a comment, a single-quoted
+# string), the decoy's own literal word "rank" sits INSIDE the opaque
+# span along with its fake value, so it is blanked in redacted text at
+# that exact offset and the liveness check rejects it - while a
+# genuine `rank:"3"` field has its keyword sitting in live object-
+# literal syntax, only the VALUE is a string, so "rank" survives
+# redaction unblanked. Same offsets, same length-preserving redaction
+# property _redact_map_text already documents, so the check is exact.
+#
+# (?<![\w$]) is the same left-anchor code_rx uses and for the same
+# reason: without it, a live field whose name merely ENDS in "rank"
+# (`xrank:3`, ordinary object-literal syntax, nothing for redaction to
+# blank) would satisfy an unanchored search exactly like a real one.
+# (?![\w$]) on the right is the mirror-image guard, and it is NOT the
+# same as a trailing \b: after the quoted alternative consumes its
+# closing quote, \b would require a word/non-word TRANSITION, but a
+# quote is itself non-word and is almost always followed by another
+# non-word character (`,`, `}`, a newline) - no transition, so \b
+# silently fails to match on every quoted rank, which is exactly the
+# bug this fix exists to remove. (?![\w$]) instead only asks "is the
+# next character NOT part of an identifier/number," which both the
+# bare (`rank:34` - digit run continues, correctly rejected as not
+# matching a shorter target) and quoted (`rank:"3",` - comma next,
+# accepted) shapes need. The captured value is always the FULL digit
+# run either way (\d+ is greedy), so the target rank is compared
+# numerically after the fact rather than baked into the pattern -
+# this also means one compiled pattern now serves every code/rank
+# pair instead of one recompiled pattern per rank number.
+_MAP_RANK_VALUE_RX = re.compile(
+    r'(?<![\w$])rank\s*:\s*(?:"(\d+)"|\'(\d+)\'|(\d+))(?![\w$])')
+
+
 @check(17, "expected asset codes, ranks, and banner text present", "section 8.4/section 8.5")
 def c17(ctx):
     """section 8.4/8.5 (partial): per-example data faithfulness, gated
@@ -3154,11 +3238,25 @@ def c17(ctx):
     #     shapes (a regex literal, a comment, a single-quoted string)
     #     where the WHOLE match, "code" keyword included, sits inside
     #     one opaque span and is therefore blanked start to finish.
-    #   - rank-pattern search: REDACTED. Rank values in this schema are
-    #     bare numbers (`rank:4`, never quoted), so redaction never
-    #     touches a genuine one - and a decoy `rank:2` hidden inside the
-    #     SAME opaque span that hid a decoy `code:` is blanked away with
-    #     it, closing that half of the exploit with no separate logic.
+    #   - rank-pattern search: BOTH, same split as code_rx just above,
+    #     and for the same reason. Task 11b's cross-model run found a
+    #     faithful dashboard that writes rank as a QUOTED string
+    #     (`rank:"3"`, not `rank:3`) - nothing in section 8.4/8.5 requires
+    #     one shape over the other - and a REDACTED-only search (the
+    #     original design here) went blind on it: redaction blanks a
+    #     quoted rank's digits exactly like it blanks a quoted code's
+    #     value, so `rank:"3"` became `rank:   ` with no "3" left to
+    #     match, and a real pairing reported "not recorded at rank 3".
+    #     Fixed the same way code_rx already is: the VALUE is read from
+    #     RAW text (bare or quoted, see _MAP_RANK_VALUE_RX), and each
+    #     match is validated against the REDACTED entry at the SAME
+    #     offset - the match only counts if the literal word "rank"
+    #     survived redaction unblanked there. A decoy `rank:2` hidden
+    #     inside the SAME opaque span that hides a decoy `code:` still
+    #     has ITS "rank" keyword blanked by that span too, so this closes
+    #     exactly as before - just via a keyword-liveness check instead
+    #     of relying on redaction to also erase the decoy's digits, which
+    #     stopped being true the moment a real rank could be quoted too.
     #   - banner: RAW ctx.html, covered on its own further down.
     redacted = _redact_map_text(body)
     problems = []
@@ -3226,14 +3324,30 @@ def c17(ctx):
                 "%s has its own code: field in %d MAP entries "
                 "(expected exactly 1); its rank cannot be trusted"
                 % (code, len(owner_idx)))
-        # Same (?<![\w$]) anchor, same reason: unanchored, a live
-        # `xrank:2` field (nothing to redact - it is ordinary code) would
-        # satisfy this search exactly as a real `rank:2` would, because
-        # "rank" is a literal substring of "xrank" and re.search does not
-        # care what precedes a match unless told to.
-        elif not re.search(r"(?<![\w$])rank\W+%d\b" % rank,
-                           redacted_entries[owner_idx[0]]):
-            problems.append("%s is not recorded at rank %d" % (code, rank))
+        else:
+            # See _MAP_RANK_VALUE_RX above for the full reasoning: match
+            # the owning entry's RAW text (a quoted rank's digits are
+            # themselves blanked by redaction, same as a quoted code's
+            # would be), then require the "rank" keyword at that exact
+            # offset to still read "rank" in the REDACTED entry - the
+            # same live-keyword discriminator code_rx's owner_idx loop
+            # above already applies to "code". A decoy `rank:N` hidden
+            # inside a string/comment/regex literal has its "code" AND
+            # "rank" keywords blanked together by the same opaque span,
+            # so closing this the same way closes both halves with one
+            # mechanism, not two independent ones that could drift apart.
+            raw_owner = raw_entries[owner_idx[0]]
+            red_owner = redacted_entries[owner_idx[0]]
+            rank_ok = False
+            for m in _MAP_RANK_VALUE_RX.finditer(raw_owner):
+                if red_owner[m.start():m.start() + 4] != "rank":
+                    continue
+                value = m.group(1) or m.group(2) or m.group(3)
+                if value is not None and int(value) == rank:
+                    rank_ok = True
+                    break
+            if not rank_ok:
+                problems.append("%s is not recorded at rank %d" % (code, rank))
     # Deliberately checked against ctx.html RAW - never body, never
     # redacted. The banner is not code check 17 needs to disbelieve; it
     # is itself a genuine string VALUE inside MAP (honesty.verbatim in
@@ -3286,7 +3400,7 @@ _BODY_CLOSE_TAIL_RX = re.compile(r"</body\s*>\Z", re.I)
 _SELF_CHECK_RX = re.compile(r"<!--\s*SELF-CHECK\s*:(.*?)-->", re.S | re.I)
 
 
-def _attestation(html):
+def _attestation(ctx):
     """Parse the model's claimed section 8 results from its own
     SELF-CHECK comment (see GENERATOR_PACKAGE.md section 8's amended
     preamble). Returns None if no comment sits where the amendment
@@ -3306,47 +3420,97 @@ def _attestation(html):
     live JS, not markup), an earlier real HTML comment documenting the
     format, anything - because leftmost-match means the first one found
     permanently shadows the real, required-to-be-last one. Confirmed
-    empirically: routing this through ctx.masked_html() does not fix it
-    either, unlike every other check in this file that risks the
-    live-vs-decoy confusion - masked_html() blanks EVERY comment
-    (script/style bodies too), and the genuine attestation IS a comment,
-    so masking would erase the real block along with the decoy. Position
-    is the only discriminator that works here.
+    empirically: routing this through the *blanked* text of
+    ctx.masked_html() does not fix it either, unlike every other check
+    in this file that risks the live-vs-decoy confusion - masking blanks
+    EVERY comment's content (script/style bodies too), and the genuine
+    attestation IS a comment, so matching against blanked text would
+    erase the real block along with the decoy. Position is the only
+    discriminator that works here - this function still reads comment
+    TEXT from the raw, original html; only comment BOUNDARIES come from
+    ctx.comment_spans().
+
+    Task 11b amendment - trailing commentary is allowed: a cooperative
+    model that documents evidence for each of its ten claims, in a
+    second HTML comment following the real SELF-CHECK block, is doing
+    something GENERATOR_PACKAGE.md rewards, not something that should
+    make its attestation invisible. The original version of this
+    function required the SELF-CHECK block itself to be the literal
+    last content before the closing tags (give or take one </body>);
+    a real cross-model run produced exactly that shape - a correct
+    attestation followed by a large "SELF-CHECK NOTES (evidence for
+    each claim above)" comment, then </body></html> - and the anchor
+    rejected it outright, SKIPping a dashboard that had actually
+    attested honestly. The fix widens what may sit between the
+    attestation and the closing tags to: whitespace, any number of
+    complete HTML comments, and at most one </body> tag, in any
+    order - i.e. the whole "trailing run" of non-code content right
+    before </html>. It does NOT widen what may sit between the
+    attestation and LIVE content before it; a decoy elsewhere in the
+    document, or real markup anywhere after the attestation, still
+    fails to reach either closing boundary exactly as before.
 
     _HTML_CLOSE_RX finds every "</html>"-shaped run of text (case-
     insensitive, tolerant of internal whitespace) and takes the LAST one
     as the document's true closing tag - matching what check 16 already
-    treats as authoritative ("does not end with </html>"). Everything
-    before that position, right-trimmed of whitespace, is one valid end
-    boundary for the attestation. A cooperative model reading "the last
-    content in the document" just as plausibly closes its own </body>
-    FIRST and writes the comment as body content, one level up from
-    </html> - the ordinary, ubiquitous shape of essentially every real
-    HTML document - so a second boundary is also accepted: if that
-    right-trimmed prefix itself ends in a "</body>"-shaped tag (case-
-    insensitive, tolerant of internal whitespace, e.g. "</body >"),
-    stripping that tag and re-trimming gives the position just before
-    it. Both are genuine "last content before the closing tags"
-    positions; neither is preferred over the other. _SELF_CHECK_RX then
-    finds every complete, self-contained SELF-CHECK comment (non-greedy,
-    so each match ends at its OWN first "-->", never swallowing past it
-    into unrelated document text); only a match whose end lands exactly
-    at ONE of those boundaries is the real attestation. A decoy
-    elsewhere - before or inside a masked region, or with real content
-    (not just whitespace and a closing tag) following it - never lands
-    at either boundary, because something always sits between its own
-    "-->" and the true closing tags."""
+    treats as authoritative ("does not end with </html>"). Starting from
+    there, rstripped, this walks BACKWARD one step at a time: if the
+    text immediately before the current position is a complete comment
+    (per ctx.comment_spans() - a script-aware scan, so a stray '<!--'
+    inside an earlier JS string can never be mistaken for a comment
+    opener here, unlike a raw sequential '<!--'/'-->' pairing would),
+    step past it and keep going; otherwise, if a single </body> tag has
+    not yet been consumed and sits right there, step past that instead
+    and keep going; otherwise stop. The comments consumed this way are
+    the trailing run, collected in the order the walk found them (closest
+    to </html> first) and then reversed into document order (closest to
+    the real content first).
+
+    Authority when more than one SELF-CHECK-shaped comment appears in
+    that run: the FIRST one in document order - i.e. the one immediately
+    after the document's real content, before any commentary - not the
+    last. This is deliberate and is the rule that cannot be gamed: if
+    the LAST one won, appending one more all-pass SELF-CHECK-shaped
+    comment after a truthful one would silently override it, and that
+    override would cost an adversary (or a careless generator) nothing -
+    it is just one more trailing comment, indistinguishable in shape
+    from a legitimate note. Taking the first match instead means nothing
+    written AFTER the real attestation can ever change what it claims;
+    the only way to control the verdict is to control the first
+    SELF-CHECK-shaped comment in the run, which is exactly the one
+    constraint that already existed before trailing commentary was
+    permitted at all. A comment that is not SELF-CHECK-shaped (an
+    ordinary note) is simply skipped over when looking for the first
+    match - it does not break the chain, since it is still a member of
+    the trailing run, just not a candidate itself."""
+    html = ctx.html
     closes = list(_HTML_CLOSE_RX.finditer(html))
     if not closes:
         return None
-    prefix = html[:closes[-1].start()].rstrip()
-    boundaries = {len(prefix)}
-    body_close = _BODY_CLOSE_TAIL_RX.search(prefix)
-    if body_close is not None:
-        boundaries.add(len(prefix[:body_close.start()].rstrip()))
+    comment_end_to_start = {}
+    for start, end in ctx.comment_spans():
+        comment_end_to_start[end] = start
+    cur = len(html[:closes[-1].start()].rstrip())
+    body_stripped = False
+    run = []  # (start, end) spans, closest to </html> first
+    while True:
+        if cur in comment_end_to_start:
+            start = comment_end_to_start[cur]
+            run.append((start, cur))
+            cur = len(html[:start].rstrip())
+            continue
+        if not body_stripped:
+            body_close = _BODY_CLOSE_TAIL_RX.search(html[:cur])
+            if body_close is not None:
+                body_stripped = True
+                cur = len(html[:body_close.start()].rstrip())
+                continue
+        break
+    run.reverse()  # now document order: closest to real content first
     m = None
-    for cand in _SELF_CHECK_RX.finditer(html):
-        if cand.end() in boundaries:
+    for start, end in run:
+        cand = _SELF_CHECK_RX.fullmatch(html[start:end])
+        if cand is not None:
             m = cand
             break
     if m is None:
@@ -3392,7 +3556,7 @@ def c18(ctx):
     results."""
     name = "self-check attestation matches actual results"
     rule = "section 8 preamble"
-    claims = _attestation(ctx.html)
+    claims = _attestation(ctx)
     if claims is None:
         return Result(18, name, rule, SKIP,
                       ["no SELF-CHECK block present as the last content "
@@ -3455,6 +3619,15 @@ def c18(ctx):
 # is a HARD stop for check 11 (baseline FAIL aborts self-test before
 # any injection runs) and a visible new WARN line for check 13 (which
 # can only WARN here, never FAIL, since this fixture carries no --map).
+#
+# A third entry (Task 11b, this cross-model run) covers the quoted-rank
+# shape check 17 went blind on: BBB-2 carries its rank as `rank: "2"`
+# (a quoted string), sitting alongside AAA-1's original bare `rank: 1`,
+# so one baseline run exercises both shapes every time --self-test
+# runs. If the quoted-rank fix in c17 (_MAP_RANK_VALUE_RX) ever
+# regresses, baseline goes from 0 FAIL to a real FAIL on check 17 -
+# another HARD stop, same mechanism as check 11's trap above, not a
+# WARN that could go unnoticed.
 FIXTURE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3474,7 +3647,7 @@ reference only, not live:
 >
 -->
 <script>
-var MAP = { assets: [ { code: "AAA-1", rank: 1 } ] };
+var MAP = { assets: [ { code: "AAA-1", rank: 1 }, { code: "BBB-2", rank: "2" } ] };
 function render(){ document.getElementById('app').textContent = MAP.assets[0].code; }
 render();
 const exampleEmbed = `<link
@@ -3762,7 +3935,108 @@ def self_test():
         print("BROKEN   --prompt output missing rule citation or instruction")
         ok = False
 
+    print("")
+    ok = _check18_placement_tests() and ok
+
     return 0 if ok else 1
+
+
+# Task 11b regression guard for check 18's trailing-comment placement
+# rule. This cannot be expressed through FIXTURE/INJECTIONS the way
+# checks 1-17's violations are: INJECTIONS only ever proves a
+# transform makes some check WORSEN against baseline (see _tripped),
+# but every case below is about whether _attestation still finds (or
+# still correctly refuses) an attestation - a parsing question with no
+# "worse status" to compare against, and there is no separate test file
+# for it to live in either. So it is asserted directly, in the same
+# PROVEN/BROKEN style as the --prompt checks just above, against small
+# synthetic documents built for exactly this - not FIXTURE, because
+# FIXTURE must stay a fixed, minimal baseline for every OTHER check and
+# growing a real attestation into it (tried during this task) cascades:
+# any injection that breaks a section-8-covering check would then also
+# trip 18, silently invalidating INJECTIONS' own expected sets.
+#
+# Each case names the exact shape this task's bug report or this file's
+# own docstrings call out as needing to keep working:
+#   - one/several trailing comments, and a comment plus </body>: the
+#     positive case - Task 11b's cross-model dashboard, which emitted a
+#     correct attestation followed by a large evidence comment before
+#     </body></html>, and was wrongly SKIPped by the pre-fix anchor.
+#   - real markup after the attestation: must still be rejected - the
+#     relaxation is for comments and whitespace only, never content.
+#   - decoy-only: a trailing comment that is not SELF-CHECK-shaped is
+#     not an attestation; SKIP, same as no comment at all.
+#   - an earlier lookalike losing to a correctly placed real block: the
+#     pre-existing position-anchoring defense (d49748b) must survive
+#     the trailing-comment relaxation unchanged.
+#   - two SELF-CHECK-shaped comments within the SAME trailing run: this
+#     is the new case Task 11b's own ruling addresses head-on - the
+#     FIRST one (closest to the real content) is authoritative, not the
+#     last, because last-wins would let anyone silently override a
+#     truthful attestation just by appending one more comment after it.
+_C18_ALL_PASS = " ".join("%d=pass" % n for n in range(1, 11))
+_C18_ALL_FAIL = " ".join("%d=fail" % n for n in range(1, 11))
+_C18_REAL_BLOCK = "<!-- SELF-CHECK: %s -->" % _C18_ALL_PASS
+_C18_DECOY_CLAIMS_BLOCK = "<!-- SELF-CHECK: %s -->" % _C18_ALL_FAIL
+_C18_NOTE_BLOCK = "<!-- SELF-CHECK NOTES: evidence retained for audit -->"
+# Multi-line, matching the ACTUAL shape of the cross-model run's own
+# trailing comment (opus_dashboard.html lines 1568-1610: "<!--\nSELF-CHECK
+# NOTES (evidence for each claim above)\n1. ...\n...\n-->"), not just a
+# single-line stand-in. Confirmed non-SELF-CHECK-shaped the same way
+# _C18_NOTE_BLOCK is: _SELF_CHECK_RX needs "SELF-CHECK" followed by
+# optional whitespace then a literal ':', and " NOTES" breaks that.
+_C18_NOTE_BLOCK_MULTILINE = (
+    "<!--\n"
+    "SELF-CHECK NOTES (evidence for each claim above)\n"
+    "1. Multi-line evidence, spanning several lines and paragraphs,\n"
+    "   exactly like the real cross-model dashboard's own trailing\n"
+    "   comment - this is the shape that actually broke check 18.\n"
+    "-->"
+)
+_C18_PASS_CLAIMS = dict((n, "pass") for n in range(1, 11))
+_C18_HEAD = "<html><body><p>content</p>\n"
+
+_C18_PLACEMENT_CASES = [
+    ("attestation followed by one trailing comment",
+     _C18_HEAD + _C18_REAL_BLOCK + "\n" + _C18_NOTE_BLOCK + "\n</html>",
+     _C18_PASS_CLAIMS),
+    ("attestation followed by several trailing comments",
+     _C18_HEAD + _C18_REAL_BLOCK + "\n" + _C18_NOTE_BLOCK + "\n"
+         + _C18_NOTE_BLOCK + "\n</html>",
+     _C18_PASS_CLAIMS),
+    ("attestation followed by a comment then </body> "
+     "(the real cross-model shape, multi-line note included)",
+     _C18_HEAD + _C18_REAL_BLOCK + "\n" + _C18_NOTE_BLOCK_MULTILINE
+         + "\n</body>\n</html>",
+     _C18_PASS_CLAIMS),
+    ("attestation followed by real markup is still rejected",
+     _C18_HEAD + _C18_REAL_BLOCK + "\n<p>more content</p>\n</body>\n</html>",
+     None),
+    ("decoy-only trailing comment still SKIPs",
+     _C18_HEAD + _C18_NOTE_BLOCK + "\n</body>\n</html>",
+     None),
+    ("earlier lookalike loses to a correctly placed real block",
+     "<html><body>\n" + _C18_DECOY_CLAIMS_BLOCK + "\n<p>content</p>\n"
+         + _C18_REAL_BLOCK + "\n</body>\n</html>",
+     _C18_PASS_CLAIMS),
+    ("first of two SELF-CHECK-shaped comments in the trailing run wins",
+     _C18_HEAD + _C18_REAL_BLOCK + "\n" + _C18_DECOY_CLAIMS_BLOCK
+         + "\n</body>\n</html>",
+     _C18_PASS_CLAIMS),
+]
+
+
+def _check18_placement_tests():
+    ok = True
+    for desc, html, expected in _C18_PLACEMENT_CASES:
+        actual = _attestation(Ctx(html, "<self-test>"))
+        if actual == expected:
+            print("PROVEN   -- c18 placement: %s" % desc)
+        else:
+            print("BROKEN   -- c18 placement: %s" % desc)
+            print("             expected %r, got %r" % (expected, actual))
+            ok = False
+    return ok
 
 
 def repair_prompt(results):
