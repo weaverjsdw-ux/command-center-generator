@@ -1315,9 +1315,22 @@ def c07(ctx):
 # same terms a quoted one is. The existing looseness of `(?:src|href)`
 # with no left word-boundary (data-src=, xsrc=) is left as it is -
 # tightening it here would narrow a check while fixing a different bug.
+#
+# re.I is REQUIRED, not cosmetic. HTML attribute names are ASCII
+# case-insensitive, so <link HREF="./theme.css"> loads off disk exactly
+# like its lowercase twin. These two patterns were the only reference
+# regexes in this file compiled without it - _REF_ATTR_RX, _IMG_SRC_RX
+# and check 6's raw scan all carried it - which is why an uppercase or
+# mixed-case local reference reported a clean PASS on check 8: a false
+# PASS on an offline-breakage check. The flag cannot widen anything
+# beyond the attribute name: the only letters in either pattern are
+# src/href, and every other element is a negated character class with no
+# alphabetic members. It does mean the documented data-src=/xsrc=
+# looseness noted above now applies case-insensitively too, which is the
+# same decision applied consistently.
 _LOCAL_ATTR_RX = re.compile(
     r"""(?:src|href)\s*=\s*(?:['"](?:\./|\.\./|/)[^'"]"""
-    r"""|(?:\./|\.\./|/)[^\s"'=<>`])""")
+    r"""|(?:\./|\.\./|/)[^\s"'=<>`])""", re.I)
 
 # Same rule as _LOCAL_ATTR_RX but capturing the whole value, so a
 # masked-region WARN can cite the reference itself rather than a
@@ -1326,7 +1339,7 @@ _LOCAL_ATTR_RX = re.compile(
 # _attr_alt_start.
 _LOCAL_REF_RX = re.compile(
     r"""(?:src|href)\s*=\s*(?:['"]((?:\./|\.\./|/)[^'"]*)['"]"""
-    r"""|((?:\./|\.\./|/)[^\s"'=<>`]+))""")
+    r"""|((?:\./|\.\./|/)[^\s"'=<>`]+))""", re.I)
 
 
 def _local_ref_tags(ctx):
@@ -4205,20 +4218,78 @@ _UNQUOTED_ATTR_CASES = [
 ]
 
 
+# Same construction, same grading limit, for the OTHER shape that
+# produced a false PASS on an offline-breakage check: a NON-LOWERCASE
+# attribute name. HTML attribute names are ASCII case-insensitive, so
+# <link HREF="./theme.css"> is loaded off disk by a browser exactly like
+# its lowercase twin - but _LOCAL_ATTR_RX and _LOCAL_REF_RX were the
+# only two reference regexes in this file compiled without re.I, so
+# check 8 reported a clean PASS on it. Checks 6, 7, 9 and 15 were
+# unaffected because their patterns (and check 6's raw scan) already
+# carried the flag, which is why <img SRC=> and <script SRC=> were
+# CAUGHT-BUT-INCOMPLETE rather than missed: 9 and 6 fired, 8 did not.
+#
+# Each case is written as an explicit PAIR with its lowercase twin,
+# because the property under test is EQUIVALENCE, not detection: the two
+# spellings load identically in a browser, so the checker must grade
+# them identically. The lowercase rows are the reference verdict, and
+# they are graded here rather than assumed - a case-varied row asserting
+# an expected set the lowercase form no longer produces would otherwise
+# pass while the pair had quietly drifted apart.
+#
+# The expected sets below were DERIVED by running each lowercase twin
+# through _tripped against the same baseline, not transcribed. Same
+# format as _UNQUOTED_ATTR_CASES, and the same sole-violation
+# construction for the same reason: _tripped grades only which checks
+# worsened, never why.
+_ATTR_CASE_CASES = [
+    ("quoted local stylesheet, lowercase href= (reference verdict)",
+     '<link rel="stylesheet" href="./theme.css">\n', "</head>", {8}),
+    ("quoted local stylesheet, UPPERCASE HREF= - must match its twin",
+     '<link rel="stylesheet" HREF="./theme.css">\n', "</head>", {8}),
+    ("quoted local stylesheet, mixed-case Href= - must match its twin",
+     '<link rel="stylesheet" Href="./theme.css">\n', "</head>", {8}),
+    ("unquoted local stylesheet, lowercase href= (reference verdict)",
+     '<link rel=stylesheet href=./theme.css>\n', "</head>", {8}),
+    ("unquoted local stylesheet, UPPERCASE HREF= - must match its twin",
+     '<link rel=stylesheet HREF=./theme.css>\n', "</head>", {8}),
+    ("local img, lowercase src= FAILs 8 and 9 (reference verdict)",
+     '<img src="./logo.png" alt=x>\n', "</body>", {8, 9}),
+    ("local img, UPPERCASE SRC= - must match its twin, 9 alone is the bug",
+     '<img SRC="./logo.png" alt=x>\n', "</body>", {8, 9}),
+    ("local img, mixed-case Src= - must match its twin",
+     '<img Src="./logo.png" alt=x>\n', "</body>", {8, 9}),
+    ("local script, lowercase src= FAILs 6 and 8 (reference verdict)",
+     '<script src="./app.js"></script>\n', "</head>", {6, 8}),
+    ("local script, UPPERCASE SRC= - must match its twin, 6 alone is the bug",
+     '<script SRC="./app.js"></script>\n', "</head>", {6, 8}),
+    # Negative control for the added re.I, mirroring the one above: a
+    # data: URI is compliant however its attribute name is cased, so an
+    # uppercase one must trip nothing at all. Without this, widening the
+    # patterns until they flagged every SRC= would pass every row above.
+    ("UPPERCASE SRC= data: img trips nothing (negative control)",
+     '<img SRC="data:image/png;base64,AAAA" alt=x>\n', "</body>", set()),
+]
+
+
 def _unquoted_attr_tests():
     ok = True
     baseline = dict((r.num, r.status)
                     for r in run_checks(Ctx(FIXTURE, "<self-test>",
                                             expect="selftest")))
-    for desc, snippet, marker, expected in _UNQUOTED_ATTR_CASES:
-        actual = _tripped(_inject_before(marker, snippet)(FIXTURE), baseline)
-        if actual == expected:
-            print("PROVEN   -- unquoted attr: %s" % desc)
-        else:
-            print("BROKEN   -- unquoted attr: %s" % desc)
-            print("             expected checks %s to worsen against the "
-                  "baseline, got %s" % (sorted(expected), sorted(actual)))
-            ok = False
+    groups = [("unquoted attr", _UNQUOTED_ATTR_CASES),
+              ("attr-name case", _ATTR_CASE_CASES)]
+    for label, cases in groups:
+        for desc, snippet, marker, expected in cases:
+            actual = _tripped(_inject_before(marker, snippet)(FIXTURE),
+                              baseline)
+            if actual == expected:
+                print("PROVEN   -- %s: %s" % (label, desc))
+            else:
+                print("BROKEN   -- %s: %s" % (label, desc))
+                print("             expected checks %s to worsen against the "
+                      "baseline, got %s" % (sorted(expected), sorted(actual)))
+                ok = False
     return ok
 
 
@@ -4345,12 +4416,21 @@ def main(argv=None):
     # unhandled OSError answers it with a raw Python traceback - which
     # reads as "the tool is broken" rather than "you typed the name
     # wrong". Report it as an ordinary error on stderr and exit nonzero.
+    #
+    # UnicodeDecodeError is caught alongside it because the near-miss is
+    # not only a name that does not exist: this repo ships
+    # docs/demo_dashboard.png beside examples/demo_dashboard.html, the
+    # most confusable pair here, and pointing the verifier at the image
+    # raised a decode traceback. UnicodeDecodeError is a ValueError, not
+    # an OSError, so it escaped the handler entirely. It also carries no
+    # .strerror, hence the getattr - reading the attribute directly would
+    # trade one traceback for an AttributeError.
     try:
         with open(args.dashboard, "r", encoding="utf-8") as fh:
             html = fh.read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         sys.stderr.write("error: cannot read dashboard %s: %s\n"
-                         % (args.dashboard, exc.strerror or exc))
+                         % (args.dashboard, getattr(exc, "strerror", None) or exc))
         return 2
     map_text = None
     if args.map_path:
