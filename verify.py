@@ -911,13 +911,16 @@ class Ctx:
         rx = re.compile(pattern, flags)
         return [(i + 1, ln) for i, ln in enumerate(self.lines) if rx.search(ln)]
 
-    def script_text(self):
-        return "\n".join(re.findall(
-            r"<script\b[^>]*>(.*?)</script\s*>", self.html, re.S | re.I))
-
-    def style_text(self):
-        return "\n".join(re.findall(
-            r"<style\b[^>]*>(.*?)</style\s*>", self.html, re.S | re.I))
+    # script_text() and style_text() used to live here. Both were dead -
+    # nothing in this file called either - and both built their result
+    # from the naive `<script\b[^>]*>` / `<style\b[^>]*>` shape that five
+    # rounds of fixes replaced everywhere else with the quote-aware
+    # _TAG_RX/_ATTR_RUN matching, and with no region-awareness at all.
+    # root_tokens()'s docstring below is the record of what happened the
+    # last time a check reached for one of them. Leaving them in place
+    # was a trap for the next editor reaching for a helper that "already
+    # exists"; they are deleted rather than fixed because nothing needs
+    # them.
 
     def root_tokens(self):
         """Custom-property name -> raw value, from every :root {...}
@@ -1174,8 +1177,49 @@ def _is_font_host(url):
     return host in FONT_HOSTS
 
 
+# An attribute VALUE may legally be unquoted in HTML5 - <link
+# rel=stylesheet href=./theme.css> and <img src=./logo.png> are both
+# valid markup a browser loads exactly like their quoted forms. Every
+# reference regex in this file used to require quotes, so those two
+# tags were invisible to checks 7, 8, 9 and 15: a dashboard that would
+# render a broken image and a missing stylesheet from disk was reported
+# 15 pass, 0 fail, exit 0. A false PASS on the offline-breakage checks
+# is the worse of the two failure directions - a false FAIL is loud and
+# gets investigated, a false PASS is the tool quietly failing at the one
+# job it exists to do.
+#
+# Check 6 already survived this because it unions its tag-matcher hits
+# with a raw `<script[^>]*\ssrc\s*=` scan that never cared about quotes;
+# 7/8/9/15 had no such second path.
+#
+# The fix is a bare-value alternative in the same shape _ATTR_PARSE_RX
+# has always carried - `[^\s"'=<>`]+`, the HTML5 unquoted-value
+# character set. It is strictly ADDITIVE: the quoted branch is listed
+# first and is byte-identical to the pattern it replaces, and regex
+# alternation is ordered, so any value that begins with a quote is still
+# matched by the quoted branch exactly as before. The bare branch can
+# only fire where the old pattern matched nothing at all.
+#
+# Two groups per pattern, quoted then bare - read them through
+# _attr_alt_value / _attr_alt_start, never m.group(1) directly, because
+# group 1 is None on a bare match.
 _REF_ATTR_RX = re.compile(
-    r"""(?:src|href)\s*=\s*['"](https?://[^'"]+)['"]""", re.I)
+    r"""(?:src|href)\s*=\s*(?:['"](https?://[^'"]+)['"]"""
+    r"""|(https?://[^\s"'=<>`]+))""", re.I)
+
+
+def _attr_alt_value(m):
+    """The value captured by a quoted-or-bare attribute-value
+    alternation: group 1 when the quoted branch fired, group 2 when the
+    bare one did. Exactly one of the two is ever non-None."""
+    return m.group(1) if m.group(1) is not None else m.group(2)
+
+
+def _attr_alt_start(m):
+    """Document/tag offset of that same value, from whichever branch
+    fired - so a citation points at the reference itself rather than at
+    a group that did not participate in the match."""
+    return m.start(1) if m.group(1) is not None else m.start(2)
 
 
 def _external_refs(ctx):
@@ -1191,7 +1235,7 @@ def _external_refs(ctx):
             continue  # anchors are navigation, not resource loads
         attr_m = _REF_ATTR_RX.search(tag_text)
         if attr_m:
-            out.append((lineno, attr_m.group(1), tag_name == "link"))
+            out.append((lineno, _attr_alt_value(attr_m), tag_name == "link"))
     # The CSS url() scan stays on RAW lines on purpose. Its two live
     # homes are exactly the regions the mask blanks: a <style> body, and
     # a script assigning el.style.background = "url(...)". Masking here
@@ -1216,7 +1260,8 @@ def _masked_region_external_refs(ctx):
         if tag_name == "a":
             continue  # anchors are navigation, not resource loads
         for m in _REF_ATTR_RX.finditer(tag_text):
-            out.append((ctx.lineno_at(start + m.start(1)), m.group(1), kind))
+            out.append((ctx.lineno_at(start + _attr_alt_start(m)),
+                        _attr_alt_value(m), kind))
     return out
 
 
@@ -1262,13 +1307,26 @@ def c07(ctx):
     return Result(7, name, rule, PASS)
 
 
-_LOCAL_ATTR_RX = re.compile(r"""(?:src|href)\s*=\s*['"](?:\./|\.\./|/)[^'"]""")
+# Bare-value alternative added for the same reason as _REF_ATTR_RX
+# above, and on the same additive terms. The two branches are kept
+# deliberately symmetric with each other: same local-path prefixes
+# (./ ../ /) and the same "at least one character after the prefix"
+# requirement, so a bare reference is judged a local ref on exactly the
+# same terms a quoted one is. The existing looseness of `(?:src|href)`
+# with no left word-boundary (data-src=, xsrc=) is left as it is -
+# tightening it here would narrow a check while fixing a different bug.
+_LOCAL_ATTR_RX = re.compile(
+    r"""(?:src|href)\s*=\s*(?:['"](?:\./|\.\./|/)[^'"]"""
+    r"""|(?:\./|\.\./|/)[^\s"'=<>`])""")
 
-# Same rule as _LOCAL_ATTR_RX but capturing the whole quoted value, so a
+# Same rule as _LOCAL_ATTR_RX but capturing the whole value, so a
 # masked-region WARN can cite the reference itself rather than a
-# raw-text tag match that may span many lines of JavaScript.
+# raw-text tag match that may span many lines of JavaScript. Quoted
+# branch is group 1, bare is group 2 - read via _attr_alt_value /
+# _attr_alt_start.
 _LOCAL_REF_RX = re.compile(
-    r"""(?:src|href)\s*=\s*['"]((?:\./|\.\./|/)[^'"]*)['"]""")
+    r"""(?:src|href)\s*=\s*(?:['"]((?:\./|\.\./|/)[^'"]*)['"]"""
+    r"""|((?:\./|\.\./|/)[^\s"'=<>`]+))""")
 
 
 def _local_ref_tags(ctx):
@@ -1294,7 +1352,8 @@ def _masked_region_local_refs(ctx):
         if tag_name == "a":
             continue  # anchors are navigation, not resource loads
         for m in _LOCAL_REF_RX.finditer(tag_text):
-            out.append((ctx.lineno_at(start + m.start(1)), m.group(1), kind))
+            out.append((ctx.lineno_at(start + _attr_alt_start(m)),
+                        _attr_alt_value(m), kind))
     return out
 
 
@@ -1329,7 +1388,17 @@ def c08(ctx):
     return Result(8, name, rule, PASS)
 
 
-_IMG_SRC_RX = re.compile(r"""\ssrc\s*=\s*['"]([^'"]*)['"]""", re.I)
+# Bare-value alternative added for the same reason as _REF_ATTR_RX
+# above: <img src=./logo.png> is valid HTML5 that a browser tries to
+# load off disk, and the quoted-only pattern this replaces could not see
+# it, so check 9 PASSed it. Quoted branch is group 1, bare is group 2 -
+# read via _attr_alt_value / _attr_alt_start, never m.group(1), which is
+# None on a bare match. The quoted branch permits an EMPTY value
+# (src="") and the bare one requires at least one character, which is
+# not an asymmetry that matters: an empty unquoted value is
+# unrepresentable in HTML.
+_IMG_SRC_RX = re.compile(
+    r"""\ssrc\s*=\s*(?:['"]([^'"]*)['"]|([^\s"'=<>`]+))""", re.I)
 
 
 @check(9, "every <img src=> is a data: URI", "section 7")
@@ -1348,7 +1417,7 @@ def c09(ctx):
         if tag_name != "img":
             continue
         m = _IMG_SRC_RX.search(tag_text)
-        if m and not m.group(1).startswith("data:"):
+        if m and not _attr_alt_value(m).startswith("data:"):
             hits.append((lineno, _flatten(tag_text)))
     soft = []
     seen = set()
@@ -1356,14 +1425,15 @@ def c09(ctx):
         if tag_name != "img":
             continue
         for m in _IMG_SRC_RX.finditer(tag_text):
-            if m.group(1).startswith("data:"):
+            value = _attr_alt_value(m)
+            if value.startswith("data:"):
                 continue
-            lineno = ctx.lineno_at(start + m.start(1))
-            if (lineno, m.group(1)) in seen:
+            lineno = ctx.lineno_at(start + _attr_alt_start(m))
+            if (lineno, value) in seen:
                 continue
-            seen.add((lineno, m.group(1)))
+            seen.add((lineno, value))
             soft.append("line %d: img src %s (inside %s - %s)"
-                        % (lineno, m.group(1)[:100],
+                        % (lineno, value[:100],
                            _REGION_LABEL[kind], _ADJUDICATE))
     soft = _cap(soft)
     problems = line_details(hits)
@@ -2472,8 +2542,8 @@ def _fonts_link_tags(ctx):
         if tag_name != "link":
             continue
         m = _REF_ATTR_RX.search(tag_text)
-        if m and _is_font_host(m.group(1)):
-            out.append((lineno, m.group(1), tag_text))
+        if m and _is_font_host(_attr_alt_value(m)):
+            out.append((lineno, _attr_alt_value(m), tag_text))
     return out
 
 
@@ -3690,20 +3760,65 @@ INJECTIONS.update({
         _inject_before("</head>",
                        '<script src="https://cdn.example.com/x.js"></script>\n'),
         {6, 7}),
-    7: ("external non-fonts stylesheet, tag carries an unescaped '>' "
-        "in an attribute before href (regression guard)",
+    # Injections 7, 8 and 9 each carry TWO tags: the original quoted
+    # form, and an UNQUOTED-attribute form of the same violation. Before
+    # the second tag existed, nothing in FIXTURE or INJECTIONS used an
+    # unquoted attribute value anywhere, which is precisely why checks
+    # 7/8/9/15 could require quotes in their reference regexes and still
+    # report 18/18 - a false PASS on the offline-breakage checks that
+    # survived every round of this build's self-testing. Unquoted
+    # attribute values are legal HTML5 that browsers load normally (see
+    # _REF_ATTR_RX).
+    #
+    # BE PRECISE ABOUT WHAT THIS DOES AND DOES NOT PROVE. These are
+    # payload additions: each injection still trips exactly the check it
+    # always tripped, so the expected sets are unchanged - and for the
+    # same reason, _tripped cannot tell an unquoted hit from the quoted
+    # one sitting beside it. Reverting the bare-value alternatives while
+    # leaving these payloads in place still reports 18/18 (measured, not
+    # assumed). What they buy is exercise, not proof: the unquoted shapes
+    # now run through the live tag path, the accessors and the FAIL
+    # detail rendering on every --self-test.
+    #
+    # The actual regression guard is _unquoted_attr_tests(), which
+    # asserts the unquoted shapes trip 7/8/9/15 as the SOLE violation in
+    # their fixture - the only construction _tripped can grade. It sits
+    # alongside _check18_placement_tests(), which exists for the same
+    # reason: a property INJECTIONS structurally cannot express.
+    #
+    # Check 15 is deliberately NOT given an unquoted payload here. Its
+    # violation is a fonts stylesheet, and check 7 FAILs on a second
+    # fonts stylesheet ("section 7 sanctions one"), so an added tag would
+    # widen injection 15's expected set from {15} to {7, 15}. Swapping
+    # its existing tag to unquoted instead would trade away the only
+    # quoted-fonts-link FAIL guard in the suite. Check 15's unquoted case
+    # is covered in _unquoted_attr_tests() instead, where it can stand
+    # alone.
+    7: ("external non-fonts stylesheets: one quoted, tag carrying an "
+        "unescaped '>' in an attribute before href, and one with "
+        "UNQUOTED attribute values (regression guards)",
         _inject_before("</head>",
                        '<link title="a>b" rel="stylesheet" '
-                       'href="https://cdn.example.com/a.css">\n'),
+                       'href="https://cdn.example.com/a.css">\n'
+                       '<link rel=stylesheet '
+                       'href=https://cdn.example.com/b.css>\n'),
         {7}),
-    8: ("local relative stylesheet reference, tag carries an unescaped "
-        "'>' in an attribute before href (regression guard)",
+    8: ("local relative stylesheet references: one quoted, tag carrying "
+        "an unescaped '>' in an attribute before href, and one with "
+        "UNQUOTED attribute values (regression guards)",
         _inject_before("</head>",
                        '<link title="a>b" rel="stylesheet" '
-                       'href="./local.css">\n'),
+                       'href="./local.css">\n'
+                       '<link rel=stylesheet href=./local-bare.css>\n'),
         {8}),
-    9: ("img src that is not a data: URI",
-        _inject_before("</body>", '<img src="#" alt="x">\n'),
+    # The unquoted img deliberately uses a bare filename rather than a
+    # ./-prefixed path: a local-path prefix would also trip check 8 and
+    # widen this injection's expected set beyond {9}.
+    9: ("img srcs that are not data: URIs: one quoted, one with "
+        "UNQUOTED attribute values (regression guard)",
+        _inject_before("</body>",
+                       '<img src="#" alt="x">\n'
+                       '<img src=logo.png alt=y>\n'),
         {9}),
 })
 
@@ -3938,6 +4053,9 @@ def self_test():
     print("")
     ok = _check18_placement_tests() and ok
 
+    print("")
+    ok = _unquoted_attr_tests() and ok
+
     return 0 if ok else 1
 
 
@@ -4035,6 +4153,71 @@ def _check18_placement_tests():
         else:
             print("BROKEN   -- c18 placement: %s" % desc)
             print("             expected %r, got %r" % (expected, actual))
+            ok = False
+    return ok
+
+
+# Regression guard for the offline-breakage checks against UNQUOTED
+# attribute values - the shape that produced a false PASS on checks 7,
+# 8, 9 and 15 while --self-test reported a clean 18/18 (see the note
+# above INJECTIONS[7] and _REF_ATTR_RX).
+#
+# This cannot be expressed by strengthening an INJECTIONS payload, for
+# the same structural reason _C18_PLACEMENT_CASES exists: _tripped only
+# reports WHICH checks worsened against the baseline, never why. An
+# unquoted violation added alongside the quoted one already in an
+# injection is invisible to it - the quoted tag trips the check on its
+# own, so the injection reports PROVEN whether the unquoted tag was seen
+# or not. The only construction _tripped can grade is one where the
+# unquoted reference is the SOLE violation in the fixture, which is what
+# every case below is.
+#
+# Each case is (description, snippet, marker-to-insert-before, expected
+# tripped set). The expected sets are the SAME verdicts the equivalent
+# quoted markup produces - that equivalence is the actual property under
+# test. An unquoted <link>/<img> is legal HTML5 that a browser loads
+# exactly like its quoted twin, so the checker must not grade the two
+# differently.
+_UNQUOTED_ATTR_CASES = [
+    ("unquoted external non-fonts stylesheet FAILs check 7",
+     '<link rel=stylesheet href=https://cdn.example.com/bare.css>\n',
+     "</head>", {7}),
+    ("unquoted local stylesheet reference FAILs check 8",
+     '<link rel=stylesheet href=./bare-local.css>\n',
+     "</head>", {8}),
+    ("unquoted non-data img src FAILs check 9",
+     '<img src=bare-logo.png alt=x>\n',
+     "</body>", {9}),
+    ("unquoted local img src FAILs checks 8 and 9 together "
+     "(the reviewer's reproduction)",
+     '<img src=./bare-logo.png alt=x>\n',
+     "</body>", {8, 9}),
+    ("unquoted render-blocking fonts stylesheet FAILs check 15",
+     '<link rel=stylesheet href=https://fonts.googleapis.com/css2>\n',
+     "</head>", {15}),
+    # Negative control. The bare-value branch must not over-fire: a
+    # data: URI is compliant however it is written, so an unquoted one
+    # must trip nothing at all. Without this, a bare branch that simply
+    # flagged every unquoted src would pass all five cases above.
+    ("unquoted data: img src trips nothing (negative control)",
+     '<img src=data:image/png;base64,AAAA alt=x>\n',
+     "</body>", set()),
+]
+
+
+def _unquoted_attr_tests():
+    ok = True
+    baseline = dict((r.num, r.status)
+                    for r in run_checks(Ctx(FIXTURE, "<self-test>",
+                                            expect="selftest")))
+    for desc, snippet, marker, expected in _UNQUOTED_ATTR_CASES:
+        actual = _tripped(_inject_before(marker, snippet)(FIXTURE), baseline)
+        if actual == expected:
+            print("PROVEN   -- unquoted attr: %s" % desc)
+        else:
+            print("BROKEN   -- unquoted attr: %s" % desc)
+            print("             expected checks %s to worsen against the "
+                  "baseline, got %s" % (sorted(expected), sorted(actual)))
             ok = False
     return ok
 
@@ -4158,12 +4341,26 @@ def main(argv=None):
     if not args.dashboard:
         p.error("dashboard path is required unless --self-test is given")
 
-    with open(args.dashboard, "r", encoding="utf-8") as fh:
-        html = fh.read()
+    # A mistyped path is the most likely first thing to go wrong, and an
+    # unhandled OSError answers it with a raw Python traceback - which
+    # reads as "the tool is broken" rather than "you typed the name
+    # wrong". Report it as an ordinary error on stderr and exit nonzero.
+    try:
+        with open(args.dashboard, "r", encoding="utf-8") as fh:
+            html = fh.read()
+    except OSError as exc:
+        sys.stderr.write("error: cannot read dashboard %s: %s\n"
+                         % (args.dashboard, exc.strerror or exc))
+        return 2
     map_text = None
     if args.map_path:
-        with open(args.map_path, "r", encoding="utf-8") as fh:
-            map_text = fh.read()
+        try:
+            with open(args.map_path, "r", encoding="utf-8") as fh:
+                map_text = fh.read()
+        except OSError as exc:
+            sys.stderr.write("error: cannot read map %s: %s\n"
+                             % (args.map_path, exc.strerror or exc))
+            return 2
 
     ctx = Ctx(html, args.dashboard, map_text, args.reference, args.expect)
     results = run_checks(ctx)
