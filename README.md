@@ -10,16 +10,19 @@ self-contained HTML dashboard that opens by double-clicking, offline.
 
 The design goal is that the dashboard doesn't quietly make the work look better than it is. Missing
 values render as `UNKNOWN`. Conflicting values render as `CONFLICT(a | b)`. Qualitative labels reach
-chart coordinates only through a closed whitelist, so an unmapped label lands in an "unmapped" strip
+chart coordinates through a closed whitelist, or — where an axis uses some other lexicon, conviction
+or confidence rather than high/medium/low — by ordering the distinct values that map actually uses
+and spacing them evenly across the axis. A label that fits neither route lands in an "unmapped" strip
 instead of being coerced to a nearby number. Deferred and outward-facing items are grayed with no
-call to action, computed from the map's own boundary sections.
+call to action, computed from the map's `boundary_check` and `operator_decisions` sections.
 
 **This is a prompt, not a validator.** A model can violate any rule in it, and long HTML generations
 are where they do. `verify.py` catches the violations that are mechanically catchable; the rest I
 check by eye. An empty-looking card usually means the guard worked.
 
-The two screenshots above are the same generator run on two unrelated maps. They share a layout and
-no vocabulary.
+The two screenshots above are the same generator run on two unrelated maps. What repeats between them
+is the skeleton the prompt imposes — the tab bar, the honesty banner, the boundary block. What differs
+is everything the map supplies: the title, the assets, the matrix axes, the section headings.
 
 ## Contents
 
@@ -57,7 +60,9 @@ python verify.py my_dashboard.html --map my_map.md
 - **1–9** — the file:// breakers. No `<script type="module">`, no ES `import`/`export`, no dynamic
   `import()`, no `fetch()`/XHR, no top-level `await`, no `<script src=>` at all, at most one external
   reference and only if it is a fonts stylesheet, no local file references, every `<img src=>` a
-  `data:` URI.
+  `data:` URI. Check 5 is the exception in that list and says so in its own name: separating a
+  top-level `await` from one inside an async function needs brace-depth analysis it does not do, so
+  it lists every `await` as a warning for a human and never fails. It warned on the Opus run.
 - **10–11** — single source of truth. Exactly one `MAP` object assignment; no hardcoded colors
   outside `:root`.
 - **12–13** — honesty and generalization. Call-to-action verbs outside quoted blocks;
@@ -81,9 +86,24 @@ check detects it.
 
 There are two worked examples because one is not evidence. The generator was written against a
 homelab project-bets catalog; `examples/research_portfolio_map.md` is a research-hypotheses portfolio
-that shares no vocabulary with it. The two screenshots at the top of this file are those two runs.
-Same layout, same honesty chrome, no shared words. That is the whole generalization claim, and it is
-easier to see than to test.
+in an unrelated domain. The two screenshots at the top of this file are those two runs.
+
+They are not word-disjoint, and an earlier draft of this file wrongly said they were. The honesty
+chrome is itself words, and the prompt puts the same furniture on every dashboard it generates. The
+tab bar is the clearest case: §6.1 prescribes `Brief / Option Board / Analysis / Execution` by name,
+and both files carry that list byte-identically. Both also carry a `REQUIRED BOUNDARY` block, a
+`[quoted]` marker, an honesty banner and a hard-rule block — though those last two are not the same
+strings, only the same furniture: the demo run shouts them (`HONESTY BOUNDARY — BINDING`) where the
+research run uses sentence case (`Honesty boundary — binding`). What the pair actually shows is the
+split — chrome from the prompt, content from the map — and that is a thing you look at rather than a
+thing I measured.
+
+The one direction of it that is checked mechanically is narrow. Check 13 passes on
+`research_dashboard.html`, which means none of the nine reference-example words the checker
+carries — `homelab`, `provisioning`, `backup`, `restore`, `dotfiles`, `monitoring`, `showcase`,
+`adoption-reality`, `community pull` — reached the research dashboard without also appearing in the
+research map. It is a provenance test over nine words on one file. It does not establish that no
+reference-example vocabulary leaked, only that those nine did not.
 
 Both committed dashboards pass:
 
@@ -140,6 +160,23 @@ both at once. The same pattern had already shown up once: baselining the verifie
 committed dashboards tripped check 11 on both, 40 flagged declarations in total, and every one of the
 40 was a bug in the checker rather than a defect in the dashboard.
 
+**Three false verdicts are live in `verify.py` right now.** The two above were found and fixed; these
+were found and not, so that the paragraph above is not read as "and then it was clean". Each
+reproduces today against a copy of `examples/demo_dashboard.html`, and each is a false FAIL at exit 1
+— the verifier calling a compliant file broken:
+
+- A commented-out CSS `url()` inside a `<style>` block trips check 8. The local-reference scan for
+  `url(...)` runs over raw lines by design, because its real homes are a `<style>` body and a script
+  assigning `el.style.background`; the cost of that is that a CSS comment is not excluded.
+- `window.MAP = MAP;` written beside the real assignment trips check 10. §8.2 asks for one `MAP`
+  object; an alias is a second assignment but not a second object, and the check counts assignments.
+- A CSS Fonts Level 4 generic family — `math`, `emoji`, `fangsong`, `ui-rounded` — trips check 14.
+  Its list of accepted generics stops at `ui-monospace`/`ui-sans-serif`/`ui-serif` and never grew the
+  rest, so a `font-family` ending in one of those four reads to it as ending in no generic at all.
+
+A false FAIL is the better direction to fail in, and I would rather ship these than narrow the checks
+to make them quiet. But each is the tool being wrong about a correct file, and none is fixed.
+
 **Check 12 reports, it does not judge.** It lists call-to-action verbs, and its pattern is stem-based,
 so it also matches negations and descriptive inflections — "No launch committed", "No commitment to
 publish or pursue". More importantly, it cannot determine quoted-block membership: the `[quoted]`
@@ -169,13 +206,20 @@ Smaller ones:
   that.
 - Single-shot. There is no iteration loop beyond re-prompting with `--prompt` output.
 - The dashboard is a snapshot of the map at generation time, not live data.
-- A map without the structural sections — binding constraint, boundary, ranks — drops the prompt into
-  DEGRADED mode, which grays every posture bucket and marks the boundary as unverified.
+- A map with no parseable binding honesty constraint drops the prompt into DEGRADED mode, which grays
+  every posture bucket and chips every card "boundary unverified". The honesty constraint is the only
+  thing DEGRADED keys on — front-matter that won't parse at all routes to that same rule, and nothing
+  else reaches it. A terse or missing boundary section does not degrade anything: the boundary block
+  falls back to the constraint text. A missing rank does not either; it sorts last under `UNRANKED`,
+  and gaps and duplicate ranks render verbatim with a marker.
 - `verify.py` reads text. It does not open a browser, so the check that matters most — does the page
   actually render — is still mine to run by double-clicking the file.
 
 ## Provenance
 
 Built in a solo-operator workflow in 2026. The strategy map that drove the design stays private; the
-worked example in §D is a real-shaped stand-in in a neutral domain. The self-critique pass that
-shaped the rules is preserved in §G.
+worked example in §D is a real-shaped stand-in in a neutral domain. §G records, rule by rule, the
+failure each hardening rule was written to block; that is the content. Its opening sentence cites a
+finding count with a severity split, from a review I ran on my own work against no published rubric
+for what made a finding critical or major. Treat the reasoning as the substance and the numbers as
+unbacked.
