@@ -160,7 +160,7 @@ both at once. The same pattern had already shown up once: baselining the verifie
 committed dashboards tripped check 11 on both, 40 flagged declarations in total, and every one of the
 40 was a bug in the checker rather than a defect in the dashboard.
 
-**Three false verdicts are live in `verify.py` right now.** The two above were found and fixed; these
+**Three false FAILs are live in `verify.py` right now.** The two above were found and fixed; these
 were found and not, so that the paragraph above is not read as "and then it was clean". Each
 reproduces today against a copy of `examples/demo_dashboard.html`, and each is a false FAIL at exit 1
 — the verifier calling a compliant file broken:
@@ -207,11 +207,14 @@ Smaller ones:
 - Single-shot. There is no iteration loop beyond re-prompting with `--prompt` output.
 - The dashboard is a snapshot of the map at generation time, not live data.
 - A map with no parseable binding honesty constraint drops the prompt into DEGRADED mode, which grays
-  every posture bucket and chips every card "boundary unverified". The honesty constraint is the only
-  thing DEGRADED keys on — front-matter that won't parse at all routes to that same rule, and nothing
-  else reaches it. A terse or missing boundary section does not degrade anything: the boundary block
-  falls back to the constraint text. A missing rank does not either; it sorts last under `UNRANKED`,
-  and gaps and duplicate ranks render verbatim with a marker.
+  every posture bucket and chips every card "boundary unverified". The honesty constraint is what
+  DEGRADED keys on — front-matter that won't parse at all routes to that same rule, and no other rule
+  in §3 or §4 routes there, though §G's summary of the banner rules calls §3 R2's
+  evidence-free-constraint case "DEGRADED gray mode" where R2 itself specifies a heightened banner
+  rather than gray buckets. A terse or missing boundary section does not degrade anything: the
+  boundary block falls back to the constraint text. A missing rank does not either; it sorts last
+  under `UNRANKED`. Duplicate ranks render verbatim with a marker; gaps render verbatim with no
+  filler.
 - `verify.py` reads text. It does not open a browser, so the check that matters most — does the page
   actually render — is still mine to run by double-clicking the file.
 
