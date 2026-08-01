@@ -532,6 +532,19 @@ Four fixtures. The first three are already in the generator repo; only the fourt
 
 ---
 
+### §F addendum — a runnable verifier now exists in this repo (added on rehome, 2026-07-31)
+
+At the time this package was written, the generator's §8 acceptance checks were prose. A
+runnable checker (`verify.py`) has since been built on the in-flight `readme-and-verifier`
+branch of this repository. It is **not** on `main` and has **not** been run against any map
+this package produced.
+
+When that branch lands, exercise §F's fixtures against it rather than by eye. This addendum
+records only that the tool exists and where — it makes no claim about what the verifier proves,
+and no claim that any fixture in §F has been run.
+
+---
+
 ## §G. Why each rule exists — DO NOT STRIP
 
 Tags: `[S]` sourcing · `[F]` fabrication · `[H]` honesty · `[E]` elicitation quality.
