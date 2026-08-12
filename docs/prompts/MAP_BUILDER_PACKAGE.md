@@ -115,8 +115,10 @@ build next. You are a faithful **recorder with hard honesty discipline**, not a 
 
 ## 2. SOURCING PASS (do this first, before any question)
 
-1. **Ask exactly one scoping question to start:** *"Which body of work should I map, and where does
-   it live — repos, folders, a notes vault, or specific files?"* Nothing else until answered.
+1. **Establish scope and location.** If the operator already supplied both the body of work and its
+   location, do not ask again — proceed directly to inventory. Otherwise ask exactly one scoping
+   question: *"Which body of work should I map, and where does it live — repos, folders, a notes
+   vault, or specific files?"* Nothing else until the missing scope or location is answered.
 2. **Inventory.** Enumerate what is actually there: repos, directories, files, note titles. Report
    the count. Do NOT read everything — read enough to identify candidate assets and their real files.
 3. **Draft silently.** Fill every contract field (§4) you can from the artifacts alone. Track which
@@ -235,9 +237,10 @@ labelled and each naming the asset(s) it applies to by code.
 ## 6. PRE-EMIT CRITIQUE (required — do not skip)
 
 Before emitting the map, state:
-1. **The three weakest entries and why** — which asset records rest on the thinnest evidence, which
-   field values you are least confident traced correctly, which blunt-reality answers sound like
-   they were softened in the telling.
+1. **The three weakest entries when at least three assets exist; otherwise, all available entries,
+   and why** — which asset records rest on the thinnest evidence, which field values you are least
+   confident traced correctly, which blunt-reality answers sound like they were softened in the
+   telling. Never invent or repeat an entry to reach three.
 2. **Every field you filled by inference rather than statement**, listed explicitly.
 3. **Ask the operator to attack these.** Then revise.
 
@@ -325,7 +328,7 @@ then, §F's round-trip check is what keeps the two from drifting.
 
 > **THIS IS ONE EXAMPLE INPUT, NOT THE SCHEMA.** Its domain (a homelab project catalog) is
 > illustrative only. It is deliberately shaped like real raw material: unordered, partly redundant,
-> with three things the artifacts cannot answer that the builder must ask for.
+> with four things the artifacts cannot answer that the builder must ask for.
 
 **What the sourcing pass finds** — the operator points at a folder; the builder inventories it:
 
@@ -365,7 +368,7 @@ the only public bet is the timeline thing and only if the format assumptions die
 DO NOT ship anything public before a secrets sweep of full history, in writing.
 ```
 
-**The three gaps the artifacts cannot answer, and the elicitation that closed them** (one question
+**The four gaps the artifacts cannot answer, and the elicitation that closed them** (one question
 per turn, artifact-anchored):
 
 > **Q1:** `NOTES.md` says "none of this is a product." For the binding honesty constraint I need
@@ -391,6 +394,51 @@ per turn, artifact-anchored):
 > background task. The writeup is queued but blocked on the ledger fact-check. Everything else is
 > catalog-only. And the secrets-sweep rule is a standing rule over all of them. The blog series,
 > marketplace listing and demo site stay shelved.
+
+> **Q4:** `NOTES.md` gives mechanics and rankings, but it does not state the map framing, most
+> consumers, or the exact blunt and synthesis wording. What exact wording should the map record for
+> those fields? Please supply only claims you are willing to own as source statements.
+>
+> **A:** Title it "Homelab & Public Tooling — Project Bets Catalog (INTERNAL — options review)."
+> Posture: options review; private, learning-first, no public launch or deadline, and no commitment
+> to ship. The infrastructure layer is the foundation; public tooling is the secondary showcase.
+> Built via quarterly homelab review (2026-05-02), self-directed. Call the blunt column
+> "adoption-reality" and gloss it exactly: "polish ≠ pull. A repo can be tidy and still have zero
+> users who care. Read that column as the skeptic's veto."
+>
+> Use these groups and codes: Section A — Infrastructure layer (foundation): INF-1 Declarative host
+> provisioning, INF-2 Backup + restore verification loop, INF-3 Monitoring + stale-state alerts.
+> Section B — Public tooling (showcase): PUB-1 Log-to-timeline visualizer, PUB-2 Dotfiles + setup
+> scripts (public repo), PUB-3 Restore-drill write-up (blog draft).
+>
+> Consumers: INF-1 "future-me rebuilding a dead machine under time pressure"; INF-2 "future-me after
+> a disk failure; family archive"; INF-3 "me, weekly review"; PUB-1 "developers who keep plaintext
+> work logs and want a visual review"; PUB-2 "DIY developers browsing dotfiles for ideas." Leave the
+> write-up consumer to the critique if it must be inferred.
+>
+> Record these exact blunt calls. INF-1: "**Solid for me, invisible to others.** Every homelabber has
+> their own bootstrap; nobody adopts a stranger's. Worth keeping sharp, worthless to showcase."
+> INF-2: "**Highest personal value, zero external pull.** \"Verified restores\" is the differentiator
+> most home setups lack, but it is a habit, not a product." PUB-1: "**Small but real niche.**
+> Plaintext-log people exist and share tools. Competes with heavier apps; wins only if setup stays
+> under five minutes. Needs the format assumptions removed before anyone else can run it." PUB-2:
+> "**Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is
+> reputational garnish at best." The monitoring and write-up wording may be inferred only if the
+> critique names that inference.
+>
+> Ranked honest calls, in order: "Keep running; the ledger habit is the crown jewel"; "Maintain for
+> myself; never showcase"; "Best public bet if format assumptions die"; "Extract the stale-state
+> gist; shelve the rest"; "Ships only after fact-check against the ledger"; "Garnish; not worth
+> active hours."
+>
+> Synthesis: nothing here is a product; INF-2's verified restores and INF-1's rebuild discipline are
+> the two habits worth protecting. PUB-1 is the only public bet with pull, conditional on removing
+> the two hardcoded format assumptions. The reusable value for others is patterns, not code: the
+> INF-3 stale-state alert pattern and INF-2 restore-ledger habit travel; the scripts do not.
+> Recommended posture: keep the foundation running; the one low-regret prep is removing PUB-1's
+> format assumptions because it enables any public showing and improves my own use regardless.
+> The adoption-reality calls stand as written. Boundary: internal review only; produce no public
+> collateral, make no production-ready or security claim, and commit to no launch.
 
 **The §6 critique the builder must emit before the map** (abbreviated):
 > Weakest three: (1) *Dotfiles* maturity — "fine, nothing special" is a vibe, not evidence; I
@@ -513,12 +561,16 @@ Internal review only. No public collateral produced (blog series, marketplace li
 
 ## §F. Test harness
 
-Four fixtures. The first three are already in the generator repo; only the fourth is new.
+Four test definitions. Fidelity has raw input and expected output in §D–§E; round-trip uses that
+same builder output; degrade cases are specified inline below. The repository does **not** contain
+the different-domain raw-material input needed for generalization.
 
 1. **Fidelity** — §D above → must produce §E. Grade with the table at the end of §E.
-2. **Generalization** — a raw-material set in a genuinely different domain must produce
-   `examples/research_portfolio_map.md` with **zero** homelab vocabulary. This is the test most
-   worth running and the one a single example cannot prove.
+2. **Generalization (NOT RUNNABLE — missing fixture)** — before claiming this passes, add a
+   genuinely different-domain raw-material set plus all required elicitation answers, then verify
+   that it produces `examples/research_portfolio_map.md` with **zero** homelab vocabulary. The
+   existing research SOURCE MAP is expected output only; by itself it cannot exercise the builder
+   or establish generalization.
 3. **Round-trip (the chain test)** — take the builder's output, paste it into the generator per
    `GENERATOR_PACKAGE.md` §C, and confirm the dashboard renders and matches that package's §E. This
    is what keeps §C here from drifting from generator §2. **A builder output the generator refuses is
@@ -528,7 +580,8 @@ Four fixtures. The first three are already in the generator repo; only the fourt
    ideas. Expected: (a) `⚠ no real file`, (b) union + `⚠ file list differs`, (c)
    `CITED-DISQUALIFIERS: NONE STATED`, (d) the §7 refusal — **not** a skeleton map.
 
-**Run 1, 3, and 4 before trusting any builder output.** 2 is the standing open question (§I).
+**Run 1, 3, and 4 before trusting any builder output.** Test 2 remains blocked until its raw input
+and elicitation answers are added; do not report it as runnable or passing (§I).
 
 ---
 
@@ -616,7 +669,7 @@ nothing."*
 **Both halves of that worked example were already in the repo.** `examples/demo_source_map.md` and
 `examples/research_portfolio_map.md` are complete, published SOURCE MAPs on two different domains —
 which is to say the builder's expected OUTPUT existed, twice, before anyone asked for it. Only the
-raw-input side was genuinely absent, and §D above shows it takes three questions to close, not a
+raw-input side was genuinely absent, and §D above shows it takes four questions to close, not a separate
 work item. The session gated four consecutive turns on operator decisions and shipped no artifact.
 
 The failure is not carelessness — it is structural. **An eliciting agent that does not inventory
