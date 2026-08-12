@@ -328,7 +328,7 @@ then, §F's round-trip check is what keeps the two from drifting.
 
 > **THIS IS ONE EXAMPLE INPUT, NOT THE SCHEMA.** Its domain (a homelab project catalog) is
 > illustrative only. It is deliberately shaped like real raw material: unordered, partly redundant,
-> with four things the artifacts cannot answer that the builder must ask for.
+> with three things the artifacts cannot answer that the builder must ask for.
 
 **What the sourcing pass finds** — the operator points at a folder; the builder inventories it:
 
@@ -342,6 +342,7 @@ homelab/
   dotfiles/ (repo, install.ps1, 12 per-tool configs)
   drafts/restore_drill_post.md
   NOTES.md
+  CATALOG_NOTES.md
 ```
 
 **`NOTES.md`, verbatim (the operator's own scratch):**
@@ -368,7 +369,64 @@ the only public bet is the timeline thing and only if the format assumptions die
 DO NOT ship anything public before a secrets sweep of full history, in writing.
 ```
 
-**The four gaps the artifacts cannot answer, and the elicitation that closed them** (one question
+**`CATALOG_NOTES.md`, verbatim (operator-owned field wording):**
+
+```
+Title: Homelab & Public Tooling — Project Bets Catalog (INTERNAL — options review).
+Posture: options review; private, learning-first, no public launch or deadline, and no commitment
+to ship. The infrastructure layer is the foundation; public tooling is the secondary showcase.
+Built via quarterly homelab review (2026-05-02), self-directed.
+
+Call the blunt column "adoption-reality" and gloss it exactly: "polish ≠ pull. A repo can be tidy
+and still have zero users who care. Read that column as the skeptic's veto."
+
+Groups and codes:
+- Section A — Infrastructure layer (foundation): INF-1 Declarative host provisioning,
+  INF-2 Backup + restore verification loop, INF-3 Monitoring + stale-state alerts.
+- Section B — Public tooling (showcase): PUB-1 Log-to-timeline visualizer,
+  PUB-2 Dotfiles + setup scripts (public repo), PUB-3 Restore-drill write-up (blog draft).
+
+Consumers:
+- INF-1: future-me rebuilding a dead machine under time pressure.
+- INF-2: future-me after a disk failure; family archive.
+- INF-3: me, weekly review.
+- PUB-1: developers who keep plaintext work logs and want a visual review.
+- PUB-2: DIY developers browsing dotfiles for ideas.
+The write-up consumer is not stated; flag it if inferred.
+
+Exact blunt calls:
+- INF-1: **Solid for me, invisible to others.** Every homelabber has their own bootstrap; nobody
+  adopts a stranger's. Worth keeping sharp, worthless to showcase.
+- INF-2: **Highest personal value, zero external pull.** "Verified restores" is the differentiator
+  most home setups lack, but it is a habit, not a product.
+- PUB-1: **Small but real niche.** Plaintext-log people exist and share tools. Competes with heavier
+  apps; wins only if setup stays under five minutes. Needs the format assumptions removed before
+  anyone else can run it.
+- PUB-2: **Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is
+  reputational garnish at best.
+Monitoring and write-up wording may be inferred only if the critique names that inference.
+
+Ranked honest calls, in order:
+1. Keep running; the ledger habit is the crown jewel.
+2. Maintain for myself; never showcase.
+3. Best public bet if format assumptions die.
+4. Extract the stale-state gist; shelve the rest.
+5. Ships only after fact-check against the ledger.
+6. Garnish; not worth active hours.
+
+Synthesis: nothing here is a product; INF-2's verified restores and INF-1's rebuild discipline are
+the two habits worth protecting. PUB-1 is the only public bet with pull, conditional on removing
+the two hardcoded format assumptions. The reusable value for others is patterns, not code: the
+INF-3 stale-state alert pattern and INF-2 restore-ledger habit travel; the scripts do not.
+Recommended posture: keep the foundation running; the one low-regret prep is removing PUB-1's
+format assumptions because it enables any public showing and improves my own use regardless.
+The adoption-reality calls stand as written.
+
+Boundary: internal review only; produce no public collateral, make no production-ready or security
+claim, and commit to no launch.
+```
+
+**The three gaps the artifacts cannot answer, and the elicitation that closed them** (one question
 per turn, artifact-anchored):
 
 > **Q1:** `NOTES.md` says "none of this is a product." For the binding honesty constraint I need
@@ -394,51 +452,6 @@ per turn, artifact-anchored):
 > background task. The writeup is queued but blocked on the ledger fact-check. Everything else is
 > catalog-only. And the secrets-sweep rule is a standing rule over all of them. The blog series,
 > marketplace listing and demo site stay shelved.
-
-> **Q4:** `NOTES.md` gives mechanics and rankings, but it does not state the map framing, most
-> consumers, or the exact blunt and synthesis wording. What exact wording should the map record for
-> those fields? Please supply only claims you are willing to own as source statements.
->
-> **A:** Title it "Homelab & Public Tooling — Project Bets Catalog (INTERNAL — options review)."
-> Posture: options review; private, learning-first, no public launch or deadline, and no commitment
-> to ship. The infrastructure layer is the foundation; public tooling is the secondary showcase.
-> Built via quarterly homelab review (2026-05-02), self-directed. Call the blunt column
-> "adoption-reality" and gloss it exactly: "polish ≠ pull. A repo can be tidy and still have zero
-> users who care. Read that column as the skeptic's veto."
->
-> Use these groups and codes: Section A — Infrastructure layer (foundation): INF-1 Declarative host
-> provisioning, INF-2 Backup + restore verification loop, INF-3 Monitoring + stale-state alerts.
-> Section B — Public tooling (showcase): PUB-1 Log-to-timeline visualizer, PUB-2 Dotfiles + setup
-> scripts (public repo), PUB-3 Restore-drill write-up (blog draft).
->
-> Consumers: INF-1 "future-me rebuilding a dead machine under time pressure"; INF-2 "future-me after
-> a disk failure; family archive"; INF-3 "me, weekly review"; PUB-1 "developers who keep plaintext
-> work logs and want a visual review"; PUB-2 "DIY developers browsing dotfiles for ideas." Leave the
-> write-up consumer to the critique if it must be inferred.
->
-> Record these exact blunt calls. INF-1: "**Solid for me, invisible to others.** Every homelabber has
-> their own bootstrap; nobody adopts a stranger's. Worth keeping sharp, worthless to showcase."
-> INF-2: "**Highest personal value, zero external pull.** \"Verified restores\" is the differentiator
-> most home setups lack, but it is a habit, not a product." PUB-1: "**Small but real niche.**
-> Plaintext-log people exist and share tools. Competes with heavier apps; wins only if setup stays
-> under five minutes. Needs the format assumptions removed before anyone else can run it." PUB-2:
-> "**Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is
-> reputational garnish at best." The monitoring and write-up wording may be inferred only if the
-> critique names that inference.
->
-> Ranked honest calls, in order: "Keep running; the ledger habit is the crown jewel"; "Maintain for
-> myself; never showcase"; "Best public bet if format assumptions die"; "Extract the stale-state
-> gist; shelve the rest"; "Ships only after fact-check against the ledger"; "Garnish; not worth
-> active hours."
->
-> Synthesis: nothing here is a product; INF-2's verified restores and INF-1's rebuild discipline are
-> the two habits worth protecting. PUB-1 is the only public bet with pull, conditional on removing
-> the two hardcoded format assumptions. The reusable value for others is patterns, not code: the
-> INF-3 stale-state alert pattern and INF-2 restore-ledger habit travel; the scripts do not.
-> Recommended posture: keep the foundation running; the one low-regret prep is removing PUB-1's
-> format assumptions because it enables any public showing and improves my own use regardless.
-> The adoption-reality calls stand as written. Boundary: internal review only; produce no public
-> collateral, make no production-ready or security claim, and commit to no launch.
 
 **The §6 critique the builder must emit before the map** (abbreviated):
 > Weakest three: (1) *Dotfiles* maturity — "fine, nothing special" is a vibe, not evidence; I
@@ -669,7 +682,7 @@ nothing."*
 **Both halves of that worked example were already in the repo.** `examples/demo_source_map.md` and
 `examples/research_portfolio_map.md` are complete, published SOURCE MAPs on two different domains —
 which is to say the builder's expected OUTPUT existed, twice, before anyone asked for it. Only the
-raw-input side was genuinely absent, and §D above shows it takes four questions to close, not a separate
+raw-input side was genuinely absent, and §D above shows it takes three questions to close, not a separate
 work item. The session gated four consecutive turns on operator decisions and shipped no artifact.
 
 The failure is not carelessness — it is structural. **An eliciting agent that does not inventory
