@@ -214,9 +214,9 @@ labelled and each naming the asset(s) it applies to by code.
 
 ## 5. HARD RULES
 
-1. **Every asset cites ≥1 real file.** No exceptions. An asset the operator insists on that has no
-   file is recorded with `**Asset (real):** NONE CITED` and flagged `⚠ no real file` — never
-   silently given a plausible path.
+1. **Every emitted asset cites ≥1 real file.** No exceptions. A named item with no verified file is
+   excluded from the SOURCE MAP and reported in the §6 critique as `⚠ no real file — excluded`.
+   Never invent a plausible path, and never render a fileless idea as an asset.
 2. **Posture is BOUNDED.** Assign a disposition ONLY when the operator states one explicitly and
    ties it to that asset by code or name. Tone is not a disposition. Conditional phrasing is not a
    disposition. Enthusiasm is not a disposition. Otherwise → `UNKNOWN`.
@@ -269,7 +269,8 @@ correct output when the input is empty.
 1. **Contract conformance.** Front matter, ≥1 section, ≥1 asset with all six per-asset fields,
    ranked table, synthesis, boundary check, operator decisions — all present or explicitly
    `UNKNOWN`.
-2. **File citation.** Every asset cites ≥1 real file, or carries the `⚠ no real file` flag.
+2. **File citation.** Every emitted asset cites ≥1 real file. Every named item without one is
+   excluded from the map and reported in the §6 critique as `⚠ no real file — excluded`.
 3. **Honesty constraint completeness.** POSITIONED-AS, NEVER-clause, and CITED-DISQUALIFIERS all
    present; disqualifiers verbatim or the literal `NONE STATED`. Nothing invented into the slot.
 4. **Posture anchoring.** Every non-UNKNOWN disposition traces to a named operator decision. Grep
@@ -386,13 +387,21 @@ Groups and codes:
 - Section B — Public tooling (showcase): PUB-1 Log-to-timeline visualizer,
   PUB-2 Dotfiles + setup scripts (public repo), PUB-3 Restore-drill write-up (blog draft).
 
+Maturity labels:
+- INF-1: High (rebuilt the primary host from bare metal twice).
+- INF-2: High (runs nightly; restore verified monthly).
+- INF-3: Medium (alerts fire; dashboard regenerates; thresholds hand-tuned).
+- PUB-1: Medium (works on my logs; two format assumptions hardcoded).
+- PUB-2: High as artifacts; personal by nature.
+- PUB-3: Low (draft; screenshots missing; claims unchecked against the ledger).
+
 Consumers:
 - INF-1: future-me rebuilding a dead machine under time pressure.
 - INF-2: future-me after a disk failure; family archive.
 - INF-3: me, weekly review.
 - PUB-1: developers who keep plaintext work logs and want a visual review.
 - PUB-2: DIY developers browsing dotfiles for ideas.
-The write-up consumer is not stated; flag it if inferred.
+- PUB-3: homelab readers who back up but never test restores.
 
 Exact blunt calls:
 - INF-1: **Solid for me, invisible to others.** Every homelabber has their own bootstrap; nobody
@@ -404,7 +413,10 @@ Exact blunt calls:
   anyone else can run it.
 - PUB-2: **Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is
   reputational garnish at best.
-Monitoring and write-up wording may be inferred only if the critique names that inference.
+- INF-3: **Medium pull as a pattern, not as code.** The "state file older than N days → alert"
+  pattern is genuinely reusable; the scripts themselves are machine-specific.
+- PUB-3: **Evergreen topic, crowded field.** Restore-drill posts perform well but dozens exist.
+  Only ships if the 14-verified-restores ledger angle survives fact-checking.
 
 Ranked honest calls, in order:
 1. Keep running; the ledger habit is the crown jewel.
@@ -433,9 +445,10 @@ per turn, artifact-anchored):
 > three parts. What is this positioned *as*, what must it *never* be presented as, and what
 > concrete evidence disqualifies the stronger claim?
 >
-> **A:** Positioned as personal experiments / learning artifacts. Never production-ready software,
-> never a security guarantee, never a maintained product promise. Evidence: zero external
-> deployments, CI is missing on 3 of the 5 repos, bus-factor is 1.
+> **A:** positioned as personal experiments / learning artifacts — **never production-ready software,
+> never a security guarantee, never a maintained product promise.** There is no external validation
+> (0 external deployments; CI missing on 3 of 5 repos; bus-factor = 1). Outward-facing collateral
+> (blog series, marketplace listing, demo site) stays **SHELVED** in the public lane.
 
 > **Q2:** Your rank list orders six items but only names the dimensions loosely ("readiness vs
 > whether anyone outside would pull"). What do you call those two columns, and what is each item's
@@ -454,12 +467,10 @@ per turn, artifact-anchored):
 > marketplace listing and demo site stay shelved.
 
 **The §6 critique the builder must emit before the map** (abbreviated):
-> Weakest three: (1) *Dotfiles* maturity — "fine, nothing special" is a vibe, not evidence; I
-> recorded `High as artifacts; personal by nature` by inference from the 12 configs and would rather
-> you restate it. (2) *Monitoring* blunt reality — you said the pattern is reusable but the scripts
-> aren't; I recorded that as-is, but "medium pull as a pattern" is my phrasing of your ranking value,
-> not your words. (3) *Restore write-up* consumer — never stated; I inferred "homelab readers who
-> back up but never test restores" from the draft's framing. Inferred fields: those three. Attack them.
+> Weakest three: (1) *Dotfiles* maturity — the label is operator-stated, but the evidence is only
+> the presence of 12 configs, so the support is thin. (2) *Monitoring* community pull — "medium as a
+> pattern" is stated, but no external use evidence is cited. (3) *Restore write-up* consumer — named,
+> but no reader or publication evidence is cited. Inferred fields: none. Attack these evidence gaps.
 
 ---
 
@@ -590,8 +601,9 @@ the different-domain raw-material input needed for generalization.
    a builder failure, not a generator bug.**
 4. **Degrade** — raw material with (a) an "asset" that has no files, (b) two notes giving different
    file lists for one asset, (c) an operator who cannot cite disqualifying evidence, (d) nothing but
-   ideas. Expected: (a) `⚠ no real file`, (b) union + `⚠ file list differs`, (c)
-   `CITED-DISQUALIFIERS: NONE STATED`, (d) the §7 refusal — **not** a skeleton map.
+   ideas. Expected: (a) exclude it from the map and report `⚠ no real file — excluded` in the §6
+   critique, (b) union + `⚠ file list differs`, (c) `CITED-DISQUALIFIERS: NONE STATED`, (d) the
+   §7 refusal — **not** a skeleton map.
 
 **Run 1, 3, and 4 before trusting any builder output.** Test 2 remains blocked until its raw input
 and elicitation answers are added; do not report it as runnable or passing (§I).
