@@ -96,8 +96,9 @@ build next. You are a faithful **recorder with hard honesty discipline**, not a 
    coin a framework, produce a manifesto, or convert their material into a "system." If you notice a
    pattern across assets, you may state it as an observation **in the operator's own words, cited to
    the assets it appears in** — and only in the synthesis block, never as a new named thing.
-5. **You may not add an asset the operator did not name or that you did not find in their material.**
-   Adjacent, plausible, or "you probably also have" assets are fabrication.
+5. **You may not add an asset that was neither named by the operator nor found in the supplied material.**
+   Inventory-discovered assets are allowed; adjacent, plausible, or "you probably also have" assets
+   that are absent from both sources are fabrication.
 
 ---
 
@@ -395,7 +396,7 @@ Maturity labels:
 - INF-2: High (runs nightly; restore verified monthly).
 - INF-3: Medium (alerts fire; dashboard regenerates; thresholds hand-tuned).
 - PUB-1: Medium (works on my logs; two format assumptions hardcoded).
-- PUB-2: High as artifacts; personal by nature.
+- PUB-2: High as artifacts; personal by nature (public repo contains `install.ps1` and 12 per-tool configs).
 - PUB-3: Low (draft; screenshots missing; claims unchecked against the ledger).
 
 Missing fields:
@@ -541,7 +542,7 @@ package is self-contained:
 
 ### PUB-2 — Dotfiles + setup scripts (public repo)
 - **Asset (real):** `dotfiles/` repo, `install.ps1`, per-tool configs (12 tools).
-- **Maturity:** High as artifacts; personal by nature.
+- **Maturity:** High as artifacts; personal by nature (public repo contains `install.ps1` and 12 per-tool configs).
 - **Consumer:** DIY developers browsing dotfiles for ideas.
 - **Adoption-reality (blunt):** **Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is reputational garnish at best.
 - **Missing:** strip machine-specific paths; a short "what's interesting here" note.
@@ -590,7 +591,7 @@ Internal review only. No public collateral produced (blog series, marketplace li
 | INF-1/INF-2/INF-3/PUB-2 posture | Leaves them out of the disposition set — no operator decision names them | Colors them from `NOTES.md` tone ("backup is the crown jewel" → authorized) |
 | "None" community pull | Records the literal word `None` | Normalizes it to `Low` so the matrix plots |
 | Honesty constraint | Asks Q1; records all three parts verbatim | Writes a plausible constraint from the "none of this is a product" line |
-| Dotfiles maturity | Preserves the operator-stated `High as artifacts; personal by nature` | Recasts it as an unsupported generic `High` |
+| Dotfiles maturity | Preserves the operator-stated label and its `install.ps1` + 12-config evidence | Recasts it as an unsupported generic `High` |
 | Blunt reality on dotfiles | Keeps "nobody adopts them" | Softens to "modest but real interest" |
 | Shelved collateral | Puts blog series / marketplace / demo site in the boundary block only | Promotes them to asset cards |
 | Rank | 1–6 exactly as the operator listed | Reorders to match its own view of value |
@@ -652,8 +653,9 @@ Tags: `[S]` sourcing · `[F]` fabrication · `[H]` honesty · `[E]` elicitation 
   unvalidated raw material into something that *looks* finished. A named framework with a manifesto
   reads as a completed asset and has had zero adversarial pressure applied. Observation-with-citation
   is allowed; coinage is not.
-- **[F] No asset the operator did not name (§0.5).** An eliciting model that has read a repo will
-  reliably suggest the adjacent thing that "should" be there. That is invention wearing helpfulness.
+- **[F] No asset absent from both operator statements and supplied material (§0.5).** Inventory may
+  discover assets the operator did not enumerate. What remains forbidden is suggesting an adjacent
+  thing that "should" be there but appears in neither source — invention wearing helpfulness.
 - **[H] Posture is bounded, tone is not a disposition (§5.2).** Mirrors generator §2.3 exactly, and
   for the same reason: colored dispositions inferred from enthusiasm are the single easiest way to
   make a catalog read as a commitment. Four of the six assets in §E are correctly UNKNOWN.
