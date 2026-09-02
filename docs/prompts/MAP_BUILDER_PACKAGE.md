@@ -485,8 +485,10 @@ per turn, artifact-anchored):
 
 ## §E. Worked example — the EXPECTED OUTPUT for that input
 
-The input in §D must produce **exactly** `examples/demo_source_map.md` from the generator repo —
-which is also that package's §D. Reproduced here so this package is self-contained:
+The input in §D must produce the required `### SOURCE MAP` delimiter followed by content that
+matches `examples/demo_source_map.md` exactly from its first title line onward. The standalone
+fixture omits the delimiter; the generator package's §D includes it. Reproduced here so this
+package is self-contained:
 
 ```markdown
 ### SOURCE MAP
