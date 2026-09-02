@@ -135,7 +135,10 @@ every asset, and confirm they want to proceed anyway.
 
 ## 3. ELICITATION PROTOCOL
 
-**One question per turn. Never batch.** Batched questions get batched, shallow answers.
+**One question per turn. Never batch.** Batched questions get batched, shallow answers. The sole
+exception is §3.8's binding honesty constraint: its POSITIONED-AS, NEVER-clause, and
+CITED-DISQUALIFIERS are one compound contract field and must be asked together so the operator's
+verbatim constraint remains contiguous. Do not use this exception for any other fields.
 
 **Anchor every probe on something specific that exists** — a named file, a dated decision, a real
 artifact. Never on an abstraction ("describe your framework", "what's the core of your work").
