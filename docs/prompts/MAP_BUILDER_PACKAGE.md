@@ -395,6 +395,14 @@ Maturity labels:
 - PUB-2: High as artifacts; personal by nature.
 - PUB-3: Low (draft; screenshots missing; claims unchecked against the ledger).
 
+Missing fields:
+- INF-1: secrets bootstrap step; document the two manual BIOS steps.
+- INF-2: offsite second copy; alert when the ledger goes stale.
+- INF-3: extract the stale-state pattern into a copyable gist; threshold config file.
+- PUB-1: format auto-detection; packaging; a hosted demo GIF.
+- PUB-2: strip machine-specific paths; a short "what's interesting here" note.
+- PUB-3: fact-check against BACKUP_LEDGER.md; screenshots; a publishable code sample.
+
 Consumers:
 - INF-1: future-me rebuilding a dead machine under time pressure.
 - INF-2: future-me after a disk failure; family archive.
@@ -418,6 +426,14 @@ Exact blunt calls:
 - PUB-3: **Evergreen topic, crowded field.** Restore-drill posts perform well but dozens exist.
   Only ships if the 14-verified-restores ledger angle survives fact-checking.
 
+Rank dimensions and values, in order:
+1. Backup — Setup readiness: High; Community pull: None.
+2. Provisioning — Setup readiness: High; Community pull: None.
+3. Timeline — Setup readiness: Medium; Community pull: Small but real.
+4. Monitoring — Setup readiness: Medium; Community pull: Medium as a pattern.
+5. Writeup — Setup readiness: Low; Community pull: Evergreen, crowded.
+6. Dotfiles — Setup readiness: High; Community pull: Commodity.
+
 Ranked honest calls, in order:
 1. Keep running; the ledger habit is the crown jewel.
 2. Maintain for myself; never showcase.
@@ -438,7 +454,7 @@ Boundary: internal review only; produce no public collateral, make no production
 claim, and commit to no launch.
 ```
 
-**The three gaps the artifacts cannot answer, and the elicitation that closed them** (one question
+**The two gaps the artifacts cannot answer, and the elicitation that closed them** (one question
 per turn, artifact-anchored):
 
 > **Q1:** `NOTES.md` says "none of this is a product." For the binding honesty constraint I need
@@ -450,15 +466,7 @@ per turn, artifact-anchored):
 > (0 external deployments; CI missing on 3 of 5 repos; bus-factor = 1). Outward-facing collateral
 > (blog series, marketplace listing, demo site) stays **SHELVED** in the public lane.
 
-> **Q2:** Your rank list orders six items but only names the dimensions loosely ("readiness vs
-> whether anyone outside would pull"). What do you call those two columns, and what is each item's
-> value on each?
->
-> **A:** Setup readiness and community pull. Backup High/None. Provisioning High/None. Timeline
-> Medium / small but real. Monitoring Medium / medium as a pattern. Writeup Low / evergreen but
-> crowded. Dotfiles High/Commodity.
-
-> **Q3:** Four of the six have no explicit disposition in `NOTES.md` — only tone. Is there a
+> **Q2:** Four of the six have no explicit disposition in `NOTES.md` — only tone. Is there a
 > decision on any of them, or do they stay unassigned?
 >
 > **A:** One carve-out only: removing the timeline's format assumptions is authorized as an undated
