@@ -354,7 +354,7 @@ Run this against your generated file. If any check fails, fix and re-check; do n
 
 ### PUB-2 — Dotfiles + setup scripts (public repo)
 - **Asset (real):** `dotfiles/` repo, `install.ps1`, per-tool configs (12 tools).
-- **Maturity:** High as artifacts; personal by nature.
+- **Maturity:** High as artifacts; personal by nature (public repo contains `install.ps1` and 12 per-tool configs).
 - **Consumer:** DIY developers browsing dotfiles for ideas.
 - **Adoption-reality (blunt):** **Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is reputational garnish at best.
 - **Missing:** strip machine-specific paths; a short "what's interesting here" note.
