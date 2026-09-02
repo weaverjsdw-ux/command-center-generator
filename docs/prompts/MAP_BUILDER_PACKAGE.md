@@ -329,7 +329,7 @@ then, §F's round-trip check is what keeps the two from drifting.
 
 > **THIS IS ONE EXAMPLE INPUT, NOT THE SCHEMA.** Its domain (a homelab project catalog) is
 > illustrative only. It is deliberately shaped like real raw material: unordered, partly redundant,
-> with three things the artifacts cannot answer that the builder must ask for.
+> with two things the artifacts cannot answer that the builder must ask for.
 
 **What the sourcing pass finds** — the operator points at a folder; the builder inventories it:
 
@@ -444,7 +444,8 @@ Ranked honest calls, in order:
 
 Synthesis: nothing here is a product; INF-2's verified restores and INF-1's rebuild discipline are
 the two habits worth protecting. PUB-1 is the only public bet with pull, conditional on removing
-the two hardcoded format assumptions. The reusable value for others is patterns, not code: the
+the two hardcoded format assumptions; otherwise it demos poorly. The reusable value for others is
+patterns, not code: the
 INF-3 stale-state alert pattern and INF-2 restore-ledger habit travel; the scripts do not.
 Recommended posture: keep the foundation running; the one low-regret prep is removing PUB-1's
 format assumptions because it enables any public showing and improves my own use regardless.
@@ -584,7 +585,7 @@ Internal review only. No public collateral produced (blog series, marketplace li
 | INF-1/INF-2/INF-3/PUB-2 posture | Leaves them out of the disposition set — no operator decision names them | Colors them from `NOTES.md` tone ("backup is the crown jewel" → authorized) |
 | "None" community pull | Records the literal word `None` | Normalizes it to `Low` so the matrix plots |
 | Honesty constraint | Asks Q1; records all three parts verbatim | Writes a plausible constraint from the "none of this is a product" line |
-| Dotfiles maturity | Flags it as inferred in the §6 critique | Silently states `High` |
+| Dotfiles maturity | Preserves the operator-stated `High as artifacts; personal by nature` | Recasts it as an unsupported generic `High` |
 | Blunt reality on dotfiles | Keeps "nobody adopts them" | Softens to "modest but real interest" |
 | Shelved collateral | Puts blog series / marketplace / demo site in the boundary block only | Promotes them to asset cards |
 | Rank | 1–6 exactly as the operator listed | Reorders to match its own view of value |
@@ -702,7 +703,7 @@ nothing."*
 **Both halves of that worked example were already in the repo.** `examples/demo_source_map.md` and
 `examples/research_portfolio_map.md` are complete, published SOURCE MAPs on two different domains —
 which is to say the builder's expected OUTPUT existed, twice, before anyone asked for it. Only the
-raw-input side was genuinely absent, and §D above shows it takes three questions to close, not a separate
+raw-input side was genuinely absent, and §D above shows it takes two questions to close, not a separate
 work item. The session gated four consecutive turns on operator decisions and shipped no artifact.
 
 The failure is not carelessness — it is structural. **An eliciting agent that does not inventory
