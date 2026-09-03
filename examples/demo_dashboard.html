@@ -210,18 +210,17 @@ var MAP = {
     { t: "State of play", x: "Nothing here is a product; two things are habits worth protecting (INF-2’s verified restores, INF-1’s rebuild discipline).", src: "honest synthesis", q: false },
     { t: "The one public bet", x: "The only public bet with pull is PUB-1, and only if the two hardcoded format assumptions are removed — otherwise it demos poorly.", src: "honest synthesis", q: false },
     { t: "Patterns travel, not code", x: "The reusable value for others is patterns, not code: the stale-state alert pattern (INF-3) and the restore-ledger habit (INF-2) travel; the scripts do not.", src: "honest synthesis", q: false },
-    { t: "Recommended posture", x: "Keep the foundation running; the one low-regret prep is removing PUB-1’s format assumptions, since it is the precondition for any public showing and improves my own use regardless.", src: "honest synthesis", q: false },
-    { t: "Boundary check", x: "Internal review only. No public collateral produced (blog series, marketplace listing, demo site remain SHELVED). Every asset cites a real file. No production-ready or security claim anywhere. No launch committed.", src: "boundary check", q: true }
+    { t: "Recommended posture", x: "Keep the foundation running; the one low-regret prep is removing PUB-1’s format assumptions, since it is the precondition for any public showing and improves my own use regardless.", src: "honest synthesis", q: false }
   ],
   authorized: [{
     id: "H2",
-    verbatim: "the ONLY carve-out from pure options-review: removing PUB-1’s hardcoded format assumptions — AUTHORIZED as an undated background task. Everything else stays catalog-only.",
+    verbatim: "the ONLY carve-out from pure options-review: removing PUB-1’s hardcoded format assumptions — AUTHORIZED as an undated background task.",
     assets: ["PUB-1"],
     dod: [
       { item: "Remove the two hardcoded format assumptions (timeline/parse.py)", src: "PUB-1 — maturity note + adoption-reality" },
       { item: "Format auto-detection", src: "PUB-1 — missing list" }
     ],
-    excluded: "packaging · a hosted demo GIF — remain catalog-only (H2: “everything else stays catalog-only”)",
+    excluded: "packaging · a hosted demo GIF — not authorized by H2; no disposition stated",
     size: "UNKNOWN — H2: undated background task"
   }],
   dnd: [
@@ -229,12 +228,13 @@ var MAP = {
     { x: "marketplace listing — SHELVED (public lane)", q: false },
     { x: "demo site — SHELVED (public lane)", q: false },
     { x: "PUB-3 restore-drill write-up — QUEUED, undated; blocked on fact-check against BACKUP_LEDGER.md (H3)", q: false },
-    { x: "PUB-1 packaging + hosted demo GIF — catalog-only (H2)", q: false },
-    { x: "H4 STANDING RULE: no repo goes public-visible before a secrets/PII sweep of its full history exists in writing", q: false },
-    { x: "INF-1 showcase — honest call: “Maintain for myself; never showcase”", q: false }
+    { x: "H4 STANDING RULE (PUB-1, PUB-2, PUB-3 public-visibility actions): no repo goes public-visible before a secrets/PII sweep of its full history exists in writing", q: false },
+    { x: "INF-1 showcase — honest call: “Maintain for myself; never showcase”", q: false },
+    { x: "INF-3 remainder — honest call: “Extract the stale-state gist; shelve the rest”", q: false },
+    { x: "PUB-2 public-repo visibility — computed PARKED by the outside-facing rule; H4 secrets/PII-sweep gate applies", q: false }
   ],
   dnd_note: "The map supplies no self-discipline line; this panel is built from the map’s deferred items only.",
-  standing_rule: "STANDING RULE — H4 (binds immediately): no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.",
+  standing_rule: "STANDING RULE — H4 (binds PUB-1, PUB-2, PUB-3 public-visibility actions immediately): no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.",
   shelved_lane_label: "SHELVED — public lane (outward-facing)",
   shelved_lane_note: "Outward-facing assets render in the SHELVED lane regardless of posture; posture chips stay visible. H2’s authorization is internal prep and does not move PUB-1 out of the public lane. Zero call-to-action by construction.",
   assets: [
@@ -247,8 +247,8 @@ var MAP = {
       missing:[{x:"secrets bootstrap step",q:false},{x:"document the two manual BIOS steps",q:false}],
       readiness:"High", pull:"None", cue:"“invisible to others … worthless to showcase”", risk:"UNKNOWN",
       honest:"Maintain for myself; never showcase", honest_q:false,
-      posture:"maintain", posture_src:"honest call", pcolor:"teal",
-      shelved:false, status:"catalog-only", statusc:"", gate:"UNKNOWN",
+      posture:"maintain for myself", posture_src:"explicit honest-call anchor", pcolor:"green",
+      shelved:false, status:"UNKNOWN", statusc:"", gate:"UNKNOWN",
       next:"(from missing list — no commitment) secrets bootstrap step; document the two manual BIOS steps",
       dndcell:"showcase (honest call: “never showcase”)" },
     { code:"INF-2", name:"Backup + restore verification loop", section:"Section A — Infrastructure layer (foundation)", rank:1,
@@ -260,8 +260,8 @@ var MAP = {
       missing:[{x:"offsite second copy",q:false},{x:"alert when the ledger goes stale",q:false}],
       readiness:"High", pull:"None", cue:"“Highest personal value, zero external pull”", risk:"UNKNOWN",
       honest:"Keep running; the ledger habit is the crown jewel", honest_q:false,
-      posture:"keep running", posture_src:"honest call", pcolor:"green",
-      shelved:false, status:"catalog-only", statusc:"", gate:"UNKNOWN",
+      posture:"keep running", posture_src:"explicit honest-call anchor", pcolor:"green",
+      shelved:false, status:"UNKNOWN", statusc:"", gate:"UNKNOWN",
       next:"(from missing list — no commitment) offsite second copy; alert when the ledger goes stale",
       dndcell:"UNKNOWN" },
     { code:"INF-3", name:"Monitoring + stale-state alerts", section:"Section A — Infrastructure layer (foundation)", rank:4,
@@ -273,8 +273,8 @@ var MAP = {
       missing:[{x:"extract the stale-state pattern into a copyable gist",q:false},{x:"threshold config file",q:false}],
       readiness:"Medium", pull:"Medium as a pattern", cue:"“Medium pull as a pattern, not as code”", risk:"UNKNOWN",
       honest:"Extract the stale-state gist; shelve the rest", honest_q:false,
-      posture:"extract gist · shelve rest", posture_src:"honest call", pcolor:"violet",
-      shelved:false, status:"catalog-only", statusc:"", gate:"UNKNOWN",
+      posture:"extract gist / shelve rest", posture_src:"explicit honest-call anchor", pcolor:"amber",
+      shelved:false, status:"UNKNOWN", statusc:"", gate:"UNKNOWN",
       next:"(from missing list — no commitment) extract the stale-state pattern into a copyable gist; threshold config file",
       dndcell:"the rest (honest call: “shelve the rest”)" },
     { code:"PUB-1", name:"Log-to-timeline visualizer", section:"Section B — Public tooling (showcase)", rank:3,
@@ -290,21 +290,21 @@ var MAP = {
       shelved:true, status:"AUTHORIZED-prep (H2)", statusc:"okc",
       gate:"H4 standing rule — secrets/PII sweep in writing before any repo goes public-visible",
       next:"AUTHORIZED (H2): remove the two hardcoded format assumptions — undated background task",
-      dndcell:"packaging · hosted demo GIF (catalog-only per H2)" },
+      dndcell:"public showing — blocked until the H4 secrets/PII sweep is written" },
     { code:"PUB-2", name:"Dotfiles + setup scripts (public repo)", section:"Section B — Public tooling (showcase)", rank:6,
       files:["dotfiles/ repo","install.ps1","per-tool configs (12 tools)"], files_q:false,
-      maturity:"High as artifacts; personal by nature",
+      maturity:"High as artifacts; personal by nature (public repo contains install.ps1 and 12 per-tool configs)",
       consumer:"DIY developers browsing dotfiles for ideas",
       reality:"Commodity. Dotfiles repos are read, starred, and never adopted wholesale. Value is reputational garnish at best.", reality_q:false,
       blunt:"Commodity.",
       missing:[{x:"strip machine-specific paths",q:false},{x:"a short “what’s interesting here” note",q:false}],
       readiness:"High", pull:"Commodity", cue:"“Commodity … reputational garnish at best”", risk:"UNKNOWN",
       honest:"Garnish; not worth active hours", honest_q:false,
-      posture:"not worth active hours", posture_src:"honest call", pcolor:"gray",
-      shelved:true, status:"catalog-only", statusc:"",
+      posture:"UNKNOWN", posture_src:"no explicit operator decision", pcolor:"gray",
+      shelved:true, status:"UNKNOWN", statusc:"",
       gate:"H4 standing rule — secrets/PII sweep in writing (repo history)",
       next:"(from missing list — no commitment) strip machine-specific paths; a short “what’s interesting here” note",
-      dndcell:"active hours (honest call: “not worth active hours”)" },
+      dndcell:"active hours (honest call: “not worth active hours”); public visibility blocked until the H4 sweep is written" },
     { code:"PUB-3", name:"Restore-drill write-up (blog draft)", section:"Section B — Public tooling (showcase)", rank:5,
       files:["drafts/restore_drill_post.md (2,100 words, unpublished)"], files_q:true,
       maturity:"Low (draft; screenshots missing; claims unchecked against the ledger)",
@@ -316,9 +316,9 @@ var MAP = {
       honest:"Ships only after fact-check against the ledger", honest_q:true,
       posture:"QUEUED — H3", posture_src:"operator decision H3", pcolor:"amber",
       shelved:true, status:"QUEUED (H3)", statusc:"warnc",
-      gate:"H3 — blocked on fact-check against BACKUP_LEDGER.md",
+      gate:"H3 — blocked on fact-check against BACKUP_LEDGER.md; H4 — secrets/PII sweep in writing before public showing",
       next:"QUEUED (H3, undated): fact-check against BACKUP_LEDGER.md; screenshots",
-      dndcell:"public lane — SHELVED" }
+      dndcell:"public lane — SHELVED; public showing blocked until the H3 fact-check and H4 sweep are complete" }
   ]
 };
 
@@ -809,7 +809,7 @@ function renderDetail(){
     tbl.appendChild(tr);
   }
   qp.appendChild(tbl);
-  qp.appendChild(el("div","faint srcnote","status routing: H2 → PUB-1 AUTHORIZED-prep · H3 → PUB-3 QUEUED · assets named by no decision → catalog-only, gate UNKNOWN · H4 is a standing rule and renders above as a gate"));
+  qp.appendChild(el("div","faint srcnote","status routing: H2 → PUB-1 AUTHORIZED-prep · H3 → PUB-3 QUEUED · assets named by no decision → UNKNOWN / unassigned, gate UNKNOWN · H4 is a standing rule and renders above as a gate"));
   s.appendChild(qp);
 
   /* dependency / unlock DAG — computed in one pass from MAP.assets[].missing */

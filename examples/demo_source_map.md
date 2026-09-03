@@ -43,7 +43,7 @@
 
 ### PUB-2 — Dotfiles + setup scripts (public repo)
 - **Asset (real):** `dotfiles/` repo, `install.ps1`, per-tool configs (12 tools).
-- **Maturity:** High as artifacts; personal by nature.
+- **Maturity:** High as artifacts; personal by nature (public repo contains `install.ps1` and 12 per-tool configs).
 - **Consumer:** DIY developers browsing dotfiles for ideas.
 - **Adoption-reality (blunt):** **Commodity.** Dotfiles repos are read, starred, and never adopted wholesale. Value is reputational garnish at best.
 - **Missing:** strip machine-specific paths; a short "what's interesting here" note.
@@ -79,6 +79,6 @@ Internal review only. No public collateral produced (blog series, marketplace li
 
 ## Operator decisions on this catalog (2026-05-02)
 - **H1:** adoption-reality calls stand as written.
-- **H2:** the ONLY carve-out from pure options-review: **removing PUB-1's hardcoded format assumptions — AUTHORIZED as an undated background task.** Everything else stays catalog-only.
+- **H2:** the ONLY carve-out from pure options-review: **removing PUB-1's hardcoded format assumptions — AUTHORIZED as an undated background task.**
 - **H3:** PUB-3 restore write-up: **QUEUED, undated** — blocked on fact-check against `BACKUP_LEDGER.md`.
-- **H4 (STANDING RULE):** no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.
+- **H4 (STANDING RULE; PUB-1, PUB-2, PUB-3 public-visibility actions):** no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.
