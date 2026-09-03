@@ -124,7 +124,7 @@ Each asset carries some/all of: **code** (stable id; primary key), **name**, **r
 ### 2.4 Synthesis / boundary / operator-decisions
 - **honest_synthesis** — source for the Brief conclusion cards (§6.2).
 - **boundary_check** — feeds the "Hard rule" block AND the computed PARKED set (§3 R1). Items named here as parked / customer-facing / outside-facing collateral are **referenced in the Do-not-do-yet / boundary panel ONLY; they do NOT enter the asset set** unless they also appear as coded asset entries.
-- **operator_decisions** — drives the Authorized-action panel, the Execution queue Status/Gate/Do-not-do-yet columns, and PARKED/standing-rule routing. **Route each decision to the asset(s) it names** (a standing-rule decision → that asset's Gate + Do-not-do-yet; a queued decision → Status QUEUED; an authorize-prep decision → Status AUTHORIZED-prep; a park decision → parked note). An asset named by no decision → Status `catalog-only`, Gate `UNKNOWN`.
+- **operator_decisions** — drives the Authorized-action panel, the Execution queue Status/Gate/Do-not-do-yet columns, and PARKED/standing-rule routing. **Route each decision to the asset(s) it names** (a standing-rule decision → that asset's Gate + Do-not-do-yet; a queued decision → Status QUEUED; an authorize-prep decision → Status AUTHORIZED-prep; a park decision → parked note). An asset named by no decision → Status `UNKNOWN` / unassigned, Gate `UNKNOWN`; never invent a default disposition token absent from the map.
 
 ### 2.5 The PARKED set + OUTSIDE-FACING definition (computed independently of the posture field)
 
@@ -472,7 +472,7 @@ sparseness is the §4 rules firing correctly:
 **Tab 4 — Execution:** a 6-row decision queue (Option / Status / Next action / Owner / Gate /
 Do-not-do-yet). Owner = the operator on every row (single-operator default — the map speaks as
 "me"/"future-me"). Status: PUB-1 AUTHORIZED-prep (H2) · PUB-3 QUEUED (H3) · the other four
-catalog-only. Gates: PUB-3 carries the H3 fact-check-against-`BACKUP_LEDGER.md` gate; the H4
+UNKNOWN / unassigned. Gates: PUB-3 carries the H3 fact-check-against-`BACKUP_LEDGER.md` gate; the H4
 secrets/PII-sweep standing rule attaches as a Gate to every repo-visibility action (it bites PUB-2
 now and any future public showing of PUB-1 or PUB-3); rows with no stated gate read UNKNOWN. Next
 actions come from each asset's Missing list.
