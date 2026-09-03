@@ -779,7 +779,7 @@ methodology, color a disposition from tone, soften a blunt assessment, supply di
 the operator never cited, or emit a skeleton when there is nothing real to map — those are the same
 disciplines the generator enforces on the way out, moved to where fabrication actually enters.
 Its expected output (§E) is the generator's worked input (§D), so the whole chain is testable today
-with fixtures already in the repo. If you are improving it, run fixture 2 (generalization) and
-fixture 3 (round-trip) first — those are the two unproven claims.
+with fixtures already in the repo. If you are improving it, run fixture 3 (round-trip) first; before running fixture 2
+(generalization), add the missing different-domain raw input and elicitation answers.
 
 *— end of package —*
