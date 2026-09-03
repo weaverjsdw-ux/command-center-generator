@@ -211,8 +211,9 @@ recommendations, no invented priorities.
 
 **`## Boundary check`** — what is explicitly not being done.
 
-**`## Operator decisions on this <map kind> (<ISO date>)`** — the explicit dispositions, each
-labelled and each naming the asset(s) it applies to by code.
+**`## Operator decisions on this <map kind> (<ISO date>)`** — the explicit decisions elicited for
+this block, each labelled and each naming the asset(s) it applies to by code. A disposition already
+stated in an asset's own Honest call remains anchored there and need not be duplicated in this block.
 
 ---
 
@@ -221,9 +222,10 @@ labelled and each naming the asset(s) it applies to by code.
 1. **Every emitted asset cites ≥1 real file.** No exceptions. A named item with no verified file is
    excluded from the SOURCE MAP and reported in the §6 critique as `⚠ no real file — excluded`.
    Never invent a plausible path, and never render a fileless idea as an asset.
-2. **Posture is BOUNDED.** Assign a disposition ONLY when the operator states one explicitly and
-   ties it to that asset by code or name. Tone is not a disposition. Conditional phrasing is not a
-   disposition. Enthusiasm is not a disposition. Otherwise → `UNKNOWN`.
+2. **Posture is BOUNDED.** Assign a disposition ONLY when the operator states one explicitly in
+   that asset's own Honest call or in an operator decision that ties it to the asset by code or name.
+   Tone is not a disposition. Conditional phrasing is not a disposition. Enthusiasm is not a
+   disposition. Otherwise → `UNKNOWN`.
 3. **The honesty constraint is verbatim.** Quote it; never paraphrase, never improve, never
    strengthen it into something more defensible than what the operator said.
 4. **Conflicts are preserved, not resolved.** `CONFLICT(a | b)`. If two sources give different file
@@ -279,8 +281,9 @@ correct output when the input is empty.
    excluded from the map and reported in the §6 critique as `⚠ no real file — excluded`.
 3. **Honesty constraint completeness.** POSITIONED-AS, NEVER-clause, and CITED-DISQUALIFIERS all
    present; disqualifiers verbatim or the literal `NONE STATED`. Nothing invented into the slot.
-4. **Posture anchoring.** Every non-UNKNOWN disposition traces to a named operator decision. Grep
-   your own output: for each colored disposition, can you point at the decision line? If not → UNKNOWN.
+4. **Posture anchoring.** Every non-UNKNOWN disposition traces to an explicit disposition in that
+   asset's own Honest call or to a named operator decision. Grep your own output: for each colored
+   disposition, can you point at the honest-call or decision line? If not → UNKNOWN.
 5. **No fabrication.** Every value traces to an artifact or a statement. No invented file paths,
    consumers, dates, ranks, or maturity claims.
 6. **No methodology.** The map names no framework, coins no term, and contains no manifesto.
@@ -678,7 +681,8 @@ Tags: `[S]` sourcing · `[F]` fabrication · `[H]` honesty · `[E]` elicitation 
   thing that "should" be there but appears in neither source — invention wearing helpfulness.
 - **[H] Posture is bounded, tone is not a disposition (§5.2).** Mirrors generator §2.3 exactly, and
   for the same reason: colored dispositions inferred from enthusiasm are the single easiest way to
-  make a catalog read as a commitment. Four of the six assets in §E are correctly UNKNOWN.
+  make a catalog read as a commitment. Three of the six assets in §E are correctly UNKNOWN; INF-3's
+  explicit Honest call supplies its split disposition without requiring a duplicate decision line.
 - **[H] Honesty constraint verbatim, disqualifiers never invented (§3.8, §5.3).** The downstream
   generator escalates an evidence-free constraint into a heightened warning state (its §3 R2). A
   builder that helpfully supplies plausible disqualifiers defuses a warning that was firing correctly.
