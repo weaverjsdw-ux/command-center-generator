@@ -516,9 +516,10 @@ bespoke numbers.
 
 Likewise, the original assigned every asset a colored posture; the hardened prompt (§2.3) only
 colors a posture when it's explicitly tied to the asset (in its honest_call or a naming
-operator-decision), else UNKNOWN/gray. For THIS map only PUB-1 (H2) and PUB-3 (H3) resolve to
-colored postures; the other four stay in the unassigned-posture gray bucket — a reviewer should
-confirm each colored card has an explicit anchor rather than being inferred from synthesis tone.
+operator-decision), else UNKNOWN/gray. For THIS map PUB-1 (H2), PUB-3 (H3), and INF-3 (its explicit
+"Extract the stale-state gist; shelve the rest" honest call) resolve to postures; the other three
+stay in the unassigned-posture gray bucket — a reviewer should confirm each colored card has an
+explicit anchor rather than being inferred from synthesis tone.
 
 ---
 
