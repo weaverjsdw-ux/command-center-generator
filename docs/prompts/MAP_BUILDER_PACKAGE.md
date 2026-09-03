@@ -464,7 +464,7 @@ Boundary: internal review only; produce no public collateral, make no production
 claim, and commit to no launch.
 ```
 
-**The four gaps the artifacts cannot answer, and the elicitation that closed them** (one question
+**The five gaps the artifacts cannot answer, and the elicitation that closed them** (one question
 per turn, artifact-anchored):
 
 > **Q1:** `NOTES.md` says "none of this is a product." For the binding honesty constraint I need
@@ -477,17 +477,21 @@ per turn, artifact-anchored):
 > (blog series, marketplace listing, demo site) stays **SHELVED** in the public lane.
 
 > **Q2:** `timeline/parse.py` has two hardcoded format assumptions. Is removing only those
-> assumptions authorized, and if so is it scheduled?
+> assumptions authorized?
 >
-> **A:** Removing PUB-1's hardcoded format assumptions is authorized as an undated background task.
-> Packaging and a hosted demo GIF are not authorized; no disposition is stated for them.
+> **A:** Yes. Removing PUB-1's hardcoded format assumptions is authorized. Packaging and a hosted
+> demo GIF are not authorized; no disposition is stated for them.
 
-> **Q3:** `RESTORE_DRAFT.md` depends on the 14-restore claim in `BACKUP_LEDGER.md`. What is the
-> disposition of PUB-3?
+> **Q3:** What schedule, if any, applies to that authorized PUB-1 task?
+>
+> **A:** It is an undated background task.
+
+> **Q4:** `drafts/restore_drill_post.md` depends on the 14-restore claim in
+> `BACKUP_LEDGER.md`. What is the disposition of PUB-3?
 >
 > **A:** The PUB-3 writeup is queued, undated, and blocked on fact-checking the ledger.
 
-> **Q4:** Several assets are repositories or could become public collateral. What binding gate, if
+> **Q5:** Several assets are repositories or could become public collateral. What binding gate, if
 > any, applies before any repo becomes public-visible?
 >
 > **A:** No repo goes public-visible before a secrets/PII sweep of its full history exists in
@@ -747,7 +751,7 @@ nothing."*
 **Both halves of that worked example were already in the repo.** `examples/demo_source_map.md` and
 `examples/research_portfolio_map.md` are complete, published SOURCE MAPs on two different domains —
 which is to say the builder's expected OUTPUT existed, twice, before anyone asked for it. Only the
-raw-input side was genuinely absent, and §D above shows it takes four questions to close, not a separate
+raw-input side was genuinely absent, and §D above shows it takes five questions to close, not a separate
 work item. The session gated four consecutive turns on operator decisions and shipped no artifact.
 
 The failure is not carelessness — it is structural. **An eliciting agent that does not inventory
