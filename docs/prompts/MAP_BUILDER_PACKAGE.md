@@ -464,7 +464,7 @@ Boundary: internal review only; produce no public collateral, make no production
 claim, and commit to no launch.
 ```
 
-**The two gaps the artifacts cannot answer, and the elicitation that closed them** (one question
+**The four gaps the artifacts cannot answer, and the elicitation that closed them** (one question
 per turn, artifact-anchored):
 
 > **Q1:** `NOTES.md` says "none of this is a product." For the binding honesty constraint I need
@@ -476,15 +476,26 @@ per turn, artifact-anchored):
 > (0 external deployments; CI missing on 3 of 5 repos; bus-factor = 1). Outward-facing collateral
 > (blog series, marketplace listing, demo site) stays **SHELVED** in the public lane.
 
-> **Q2:** Four of the six have no explicit disposition in `NOTES.md` — only tone. Is there a
-> decision on any of them, or do they stay unassigned?
+> **Q2:** `timeline/parse.py` has two hardcoded format assumptions. Is removing only those
+> assumptions authorized, and if so is it scheduled?
 >
-> **A:** One carve-out only: removing the timeline's format assumptions is authorized as an undated
-> background task. The writeup is queued but blocked on the ledger fact-check. No disposition
-> was stated for INF-1, INF-2, or PUB-2; leave them UNKNOWN. INF-3's honest call explicitly says
-> to extract the stale-state gist and shelve the rest, so preserve that split disposition. The
-> secrets-sweep rule is a standing rule over all of them. The blog series, marketplace listing and
-> demo site stay shelved.
+> **A:** Removing PUB-1's hardcoded format assumptions is authorized as an undated background task.
+> Packaging and a hosted demo GIF are not authorized; no disposition is stated for them.
+
+> **Q3:** `RESTORE_DRAFT.md` depends on the 14-restore claim in `BACKUP_LEDGER.md`. What is the
+> disposition of PUB-3?
+>
+> **A:** The PUB-3 writeup is queued, undated, and blocked on fact-checking the ledger.
+
+> **Q4:** Several assets are repositories or could become public collateral. What binding gate, if
+> any, applies before any repo becomes public-visible?
+>
+> **A:** No repo goes public-visible before a secrets/PII sweep of its full history exists in
+> writing; treat this as a standing rule.
+
+The ranked honest calls already explicitly anchor INF-1 ("Maintain for myself; never showcase"),
+INF-2 ("Keep running"), and INF-3 ("Extract the stale-state gist; shelve the rest"). PUB-2 has no
+explicit disposition and remains UNKNOWN.
 
 **The §6 critique the builder must emit before the map** (abbreviated):
 > Weakest three: (1) *Dotfiles* maturity — the label is operator-stated, but the evidence is only
@@ -610,8 +621,9 @@ Internal review only. No public collateral produced (blog series, marketplace li
 | Check | What a good builder does | What a fluent-but-wrong builder does |
 |---|---|---|
 | Codes | Assigns `INF-*` / `PUB-*` from the operator's own two-group split | Invents a taxonomy the notes don't support |
-| INF-1/INF-2/PUB-2 posture | Leaves them out of the disposition set — no explicit disposition names them | Colors them from `NOTES.md` tone ("backup is the crown jewel" → authorized) |
+| INF-1/INF-2 posture | Preserves their explicit honest-call postures: maintain for myself / keep running | Replaces source-backed postures with UNKNOWN |
 | INF-3 posture | Preserves the honest call's explicit split: extract the stale-state gist; shelve the rest | Replaces that source-backed disposition with UNKNOWN |
+| PUB-2 posture | Leaves it UNKNOWN because neither its honest call nor a decision supplies a disposition | Colors it from `NOTES.md` tone ("garnish" → shelved) |
 | "None" community pull | Records the literal word `None` | Normalizes it to `Low` so the matrix plots |
 | Honesty constraint | Asks Q1; records all three parts verbatim | Writes a plausible constraint from the "none of this is a product" line |
 | Dotfiles maturity | Preserves the operator-stated label and its `install.ps1` + 12-config evidence | Recasts it as an unsupported generic `High` |
@@ -681,8 +693,9 @@ Tags: `[S]` sourcing · `[F]` fabrication · `[H]` honesty · `[E]` elicitation 
   thing that "should" be there but appears in neither source — invention wearing helpfulness.
 - **[H] Posture is bounded, tone is not a disposition (§5.2).** Mirrors generator §2.3 exactly, and
   for the same reason: colored dispositions inferred from enthusiasm are the single easiest way to
-  make a catalog read as a commitment. Three of the six assets in §E are correctly UNKNOWN; INF-3's
-  explicit Honest call supplies its split disposition without requiring a duplicate decision line.
+  make a catalog read as a commitment. PUB-2 is the one asset in §E correctly left UNKNOWN; INF-1,
+  INF-2, and INF-3 each have an explicit Honest-call posture without requiring duplicate decision
+  lines.
 - **[H] Honesty constraint verbatim, disqualifiers never invented (§3.8, §5.3).** The downstream
   generator escalates an evidence-free constraint into a heightened warning state (its §3 R2). A
   builder that helpfully supplies plausible disqualifiers defuses a warning that was firing correctly.
@@ -734,7 +747,7 @@ nothing."*
 **Both halves of that worked example were already in the repo.** `examples/demo_source_map.md` and
 `examples/research_portfolio_map.md` are complete, published SOURCE MAPs on two different domains —
 which is to say the builder's expected OUTPUT existed, twice, before anyone asked for it. Only the
-raw-input side was genuinely absent, and §D above shows it takes two questions to close, not a separate
+raw-input side was genuinely absent, and §D above shows it takes four questions to close, not a separate
 work item. The session gated four consecutive turns on operator decisions and shipped no artifact.
 
 The failure is not carelessness — it is structural. **An eliciting agent that does not inventory
