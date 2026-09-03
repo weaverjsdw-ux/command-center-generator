@@ -81,4 +81,4 @@ Internal review only. No public collateral produced (blog series, marketplace li
 - **H1:** adoption-reality calls stand as written.
 - **H2:** the ONLY carve-out from pure options-review: **removing PUB-1's hardcoded format assumptions — AUTHORIZED as an undated background task.**
 - **H3:** PUB-3 restore write-up: **QUEUED, undated** — blocked on fact-check against `BACKUP_LEDGER.md`.
-- **H4 (STANDING RULE):** no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.
+- **H4 (STANDING RULE; PUB-1, PUB-2, PUB-3 public-visibility actions):** no repo goes public-visible before a secrets/PII sweep of its full history exists in writing.
