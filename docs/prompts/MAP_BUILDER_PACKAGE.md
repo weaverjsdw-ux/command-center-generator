@@ -246,7 +246,8 @@ Before emitting the map, state:
    confident traced correctly, which blunt-reality answers sound like they were softened in the
    telling. Never invent or repeat an entry to reach three.
 2. **Every field you filled by inference rather than statement**, listed explicitly.
-3. **Ask the operator to attack these.** Then revise.
+3. **Ask the operator to attack each critique target in a separate turn.** Never batch the targets
+   into one prompt. Revise each target after its response before asking about the next.
 
 Only after that pass do you emit the map. **State your interpretation, then invite the attack** —
 do not perform disagreement, and do not manufacture objections to seem rigorous. Naming a specific
@@ -270,9 +271,10 @@ correct output when the input is empty.
 
 ## 8. ACCEPTANCE CHECKS (self-verify BEFORE emitting)
 
-1. **Contract conformance.** Front matter, ≥1 section, ≥1 asset with all six per-asset fields,
-   ranked table, synthesis, boundary check, operator decisions — all present or explicitly
-   `UNKNOWN`.
+1. **Contract conformance.** All required front-matter fields, ≥1 section, ≥1 asset with all six
+   per-asset fields, ranked table, synthesis, boundary check, and operator decisions are present or
+   explicitly `UNKNOWN`. The optional Primary emphasis field is present only when declared and is
+   omitted when the operator declares none, as required by §4.
 2. **File citation.** Every emitted asset cites ≥1 real file. Every named item without one is
    excluded from the map and reported in the §6 critique as `⚠ no real file — excluded`.
 3. **Honesty constraint completeness.** POSITIONED-AS, NEVER-clause, and CITED-DISQUALIFIERS all
@@ -476,17 +478,31 @@ per turn, artifact-anchored):
 >
 > **A:** One carve-out only: removing the timeline's format assumptions is authorized as an undated
 > background task. The writeup is queued but blocked on the ledger fact-check. No disposition
-> was stated for INF-1, INF-2, INF-3, or PUB-2; leave them UNKNOWN. The secrets-sweep rule is a
-> standing rule over all of them. The blog series,
-> marketplace listing and demo site stay shelved.
+> was stated for INF-1, INF-2, or PUB-2; leave them UNKNOWN. INF-3's honest call explicitly says
+> to extract the stale-state gist and shelve the rest, so preserve that split disposition. The
+> secrets-sweep rule is a standing rule over all of them. The blog series, marketplace listing and
+> demo site stay shelved.
 
 **The §6 critique the builder must emit before the map** (abbreviated):
 > Weakest three: (1) *Dotfiles* maturity — the label is operator-stated, but the evidence is only
 > the presence of 12 configs, so the support is thin. (2) *Monitoring* community pull — "medium as a
 > pattern" is stated, but no external use evidence is cited. (3) *Restore write-up* consumer — named,
-> but no reader or publication evidence is cited. Inferred fields: none. Attack these evidence gaps.
+> but no reader or publication evidence is cited. Inferred fields: none.
 >
-> **Operator response:** Evidence gaps accepted as stated; no field corrections. Emit the map.
+> **Builder, turn 1:** Attack the *Dotfiles* maturity evidence gap. What correction, if any, should
+> replace the current field?
+>
+> **Operator response, turn 1:** Keep it as stated; no correction.
+>
+> **Builder, turn 2:** Attack the *Monitoring* community-pull evidence gap. What correction, if any,
+> should replace the current field?
+>
+> **Operator response, turn 2:** Keep it as stated; no correction.
+>
+> **Builder, turn 3:** Attack the *Restore write-up* consumer evidence gap. What correction, if any,
+> should replace the current field?
+>
+> **Operator response, turn 3:** Keep it as stated; no correction. Emit the map.
 
 ---
 
@@ -591,7 +607,8 @@ Internal review only. No public collateral produced (blog series, marketplace li
 | Check | What a good builder does | What a fluent-but-wrong builder does |
 |---|---|---|
 | Codes | Assigns `INF-*` / `PUB-*` from the operator's own two-group split | Invents a taxonomy the notes don't support |
-| INF-1/INF-2/INF-3/PUB-2 posture | Leaves them out of the disposition set — no operator decision names them | Colors them from `NOTES.md` tone ("backup is the crown jewel" → authorized) |
+| INF-1/INF-2/PUB-2 posture | Leaves them out of the disposition set — no explicit disposition names them | Colors them from `NOTES.md` tone ("backup is the crown jewel" → authorized) |
+| INF-3 posture | Preserves the honest call's explicit split: extract the stale-state gist; shelve the rest | Replaces that source-backed disposition with UNKNOWN |
 | "None" community pull | Records the literal word `None` | Normalizes it to `Low` so the matrix plots |
 | Honesty constraint | Asks Q1; records all three parts verbatim | Writes a plausible constraint from the "none of this is a product" line |
 | Dotfiles maturity | Preserves the operator-stated label and its `install.ps1` + 12-config evidence | Recasts it as an unsupported generic `High` |
