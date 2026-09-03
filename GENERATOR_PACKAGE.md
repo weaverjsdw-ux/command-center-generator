@@ -427,16 +427,17 @@ a regression.**
   maintained product promise.
 - Authorized-action panel: remove PUB-1's hardcoded format assumptions (the ONLY authorized move,
   per operator decision H2), rendered as an internal prep task with a Definition-of-Done checklist
-  built from PUB-1's Missing list (format auto-detection · packaging · a hosted demo GIF) and a
-  task-size table whose sizes read UNKNOWN (the map states no estimates — never invented). It is
-  internal prep, NOT a CTA, and it upgrades nothing elsewhere on the board.
+  limited to removing the two hardcoded assumptions and adding format auto-detection. Packaging and
+  a hosted demo GIF remain missing prep with no disposition, so they are explicitly excluded from
+  the authorized task. The task-size table reads UNKNOWN (the map states no estimates — never
+  invented). It is internal prep, NOT a CTA, and it upgrades nothing elsewhere on the board.
 - Do-not-do-yet panel (6 entries): the three boundary-named outward-facing collateral items
   (blog series · marketplace listing · demo site — panel references only, never asset cards), the
   H4 standing rule (no repo goes public-visible before a written secrets/PII sweep of its full
-  history), PUB-2's public-repo visibility (outside-facing, parked by default, H4-gated), and
-  PUB-3's publish step (queued but blocked on the fact-check gate). The map supplies no
-  self-discipline line, so per §5 none is rendered — the panel is built from the deferred items
-  alone.
+  history), PUB-3's publish step (queued but blocked on the fact-check gate), and INF-1's explicit
+  "never showcase" honest call. PUB-2 has no disposition and is therefore omitted. The map supplies
+  no self-discipline line, so per §5 none is rendered — the panel is built from explicitly deferred,
+  blocked, or prohibited items alone.
 
 **Tab 2 — Option Board** (buckets derived ONLY from explicit anchors):
 authorized [PUB-1] (H2 names it by code) · queued [PUB-3] (H3) · unassigned posture — gray
