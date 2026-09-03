@@ -476,11 +476,11 @@ per turn, artifact-anchored):
 > (0 external deployments; CI missing on 3 of 5 repos; bus-factor = 1). Outward-facing collateral
 > (blog series, marketplace listing, demo site) stays **SHELVED** in the public lane.
 
-> **Q2:** `timeline/parse.py` has two hardcoded format assumptions. Is removing only those
-> assumptions authorized?
+> **Q2:** `timeline/parse.py` has two hardcoded format assumptions. What disposition, if any,
+> applies to the work of removing those assumptions?
 >
-> **A:** Yes. Removing PUB-1's hardcoded format assumptions is authorized. Packaging and a hosted
-> demo GIF are not authorized; no disposition is stated for them.
+> **A:** Removing PUB-1's hardcoded format assumptions is authorized. Packaging and a hosted demo
+> GIF are not authorized; no disposition is stated for them.
 
 > **Q3:** What schedule, if any, applies to that authorized PUB-1 task?
 >
@@ -491,11 +491,11 @@ per turn, artifact-anchored):
 >
 > **A:** The PUB-3 writeup is queued, undated, and blocked on fact-checking the ledger.
 
-> **Q5:** Several assets are repositories or could become public collateral. What binding gate, if
-> any, applies before any repo becomes public-visible?
+> **Q5:** `NOTES.md` already says, "DO NOT ship anything public before a secrets sweep of full
+> history, in writing." How should that source statement be classified in operator decisions?
 >
-> **A:** No repo goes public-visible before a secrets/PII sweep of its full history exists in
-> writing; treat this as a standing rule.
+> **A:** Treat it as a standing rule: no repo goes public-visible before a secrets/PII sweep of its
+> full history exists in writing.
 
 The ranked honest calls already explicitly anchor INF-1 ("Maintain for myself; never showcase"),
 INF-2 ("Keep running"), and INF-3 ("Extract the stale-state gist; shelve the rest"). PUB-2 has no
