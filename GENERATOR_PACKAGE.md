@@ -431,21 +431,21 @@ a regression.**
   a hosted demo GIF remain missing prep with no disposition, so they are explicitly excluded from
   the authorized task. The task-size table reads UNKNOWN (the map states no estimates — never
   invented). It is internal prep, NOT a CTA, and it upgrades nothing elsewhere on the board.
-- Do-not-do-yet panel (7 entries): the three boundary-named outward-facing collateral items
+- Do-not-do-yet panel (8 entries): the three boundary-named outward-facing collateral items
   (blog series · marketplace listing · demo site — panel references only, never asset cards), the
   H4 standing rule (no repo goes public-visible before a written secrets/PII sweep of its full
   history), PUB-3's publish step (queued but blocked on the fact-check gate), INF-1's explicit
-  "never showcase" honest call, and the shelved remainder of INF-3 after its gist is extracted.
-  PUB-2 has no disposition and is therefore omitted. The map supplies no self-discipline line, so
-  per §5 none is rendered — the panel is built from explicitly deferred, blocked, or prohibited
-  items alone.
+  "never showcase" honest call, the shelved remainder of INF-3 after its gist is extracted, and
+  PUB-2 public-repo visibility (computed PARKED by §2.5 and H4-gated despite its UNKNOWN posture).
+  The map supplies no self-discipline line, so per §5 none is rendered — the panel is built from
+  explicitly deferred, blocked, prohibited, or computed-PARKED items alone.
 
 **Tab 2 — Option Board** (buckets derived ONLY from explicit anchors):
 authorized [PUB-1] (H2 names it by code) · queued [PUB-3] (H3) · extract gist / shelve rest [INF-3]
-(its own honest call) · unassigned posture — gray [INF-2, INF-1, PUB-2]. Nothing else in the map
-ties a disposition word to a specific asset — honest-call verbs like "keep running" / "maintain for
-myself" are not taxonomy words, and synthesis tone never colors a card (§2.3). Overlays: PUB-2 and
-PUB-3 are outside-facing (a public repo; a
+· maintain for myself [INF-1] · keep running [INF-2] (each from its own honest call) · unassigned
+posture — gray [PUB-2]. Nothing else in the map ties a disposition word to a specific asset, and
+synthesis tone never colors a card (§2.3). Overlays: PUB-2 and PUB-3 are outside-facing (a public
+repo; a
 public post), so §2.5 force-renders their cards in the gray no-CTA PARKED treatment regardless of
 bucket — PUB-3 keeps its QUEUED chip, but queueing is not outside-use authorization. PUB-2
 additionally carries a red GATED chip (H4 gates any repo-visibility action). PUB-1's card carries
@@ -495,8 +495,8 @@ the failure the deterministic guard exists to catch.
 
 | Code | Name | Rank | Readiness (map word) | Pull (map word) | Risk/ceiling cue | Posture (derivation) |
 |---|---|---|---|---|---|---|
-| INF-2 | Backup + restore verification loop | 1 | High | None | "highest personal value" / "crown jewel" | UNKNOWN → unassigned gray (no explicit anchor) |
-| INF-1 | Declarative host provisioning | 2 | High | None | "invisible to others" / "never showcase" | UNKNOWN → unassigned gray (no explicit anchor) |
+| INF-2 | Backup + restore verification loop | 1 | High | None | "highest personal value" / "crown jewel" | keep running (explicit honest-call anchor) |
+| INF-1 | Declarative host provisioning | 2 | High | None | "invisible to others" / "never showcase" | maintain for myself (explicit honest-call anchor) |
 | PUB-1 | Log-to-timeline visualizer | 3 | Medium | Small but real | "wins only if setup stays under five minutes" | authorized (op-decision H2 names it) |
 | INF-3 | Monitoring + stale-state alerts | 4 | Medium | Medium as a pattern | "pattern reusable; scripts machine-specific" | extract gist / shelve rest (explicit honest-call anchor) |
 | PUB-3 | Restore-drill write-up | 5 | Low | Evergreen, crowded | "crowded field" / blocked on fact-check | queued (op-decision H3) + outside-facing gray per §2.5 |
@@ -516,10 +516,10 @@ bespoke numbers.
 
 Likewise, the original assigned every asset a colored posture; the hardened prompt (§2.3) only
 colors a posture when it's explicitly tied to the asset (in its honest_call or a naming
-operator-decision), else UNKNOWN/gray. For THIS map PUB-1 (H2), PUB-3 (H3), and INF-3 (its explicit
-"Extract the stale-state gist; shelve the rest" honest call) resolve to postures; the other three
-stay in the unassigned-posture gray bucket — a reviewer should confirm each colored card has an
-explicit anchor rather than being inferred from synthesis tone.
+operator-decision), else UNKNOWN/gray. For THIS map PUB-1 (H2), PUB-3 (H3), INF-1 ("Maintain for myself"), INF-2 ("Keep running"), and
+INF-3 ("Extract the stale-state gist; shelve the rest") resolve to postures; only PUB-2 stays in the
+unassigned-posture gray bucket. A reviewer should confirm each colored card has an explicit anchor
+rather than being inferred from synthesis tone.
 
 ---
 
