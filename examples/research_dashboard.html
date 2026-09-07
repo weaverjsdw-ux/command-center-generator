@@ -197,7 +197,7 @@ const MAP = {
      maturity:"High", pull:"High (everything depends on it)",
      honestCall:"Keep running; document the data layer",
      posture:"UNKNOWN", postureAnchor:"no explicit disposition word in its honest call and no operator decision names it",
-     status:"catalog-only", statusSource:"named by no operator decision",
+     status:"UNKNOWN", statusSource:"unassigned; named by no operator decision",
      gate:null, dontYet:null, outsideFacing:false, parkedComputed:false},
     {code:"TOOL-2", name:"Blinded self-scoring protocol", section:"B", rank:2,
      files:["protocols/blind_scoring.md","tools/blind_score.py"],
@@ -237,7 +237,7 @@ const MAP = {
      maturity:"Medium", pull:"Low",
      honestCall:"Fix style-3 only if MEM-1 files",
      posture:"UNKNOWN", postureAnchor:"no explicit disposition word in its honest call and no operator decision names it",
-     status:"catalog-only", statusSource:"named by no operator decision",
+     status:"UNKNOWN", statusSource:"unassigned; named by no operator decision",
      gate:null,
      dontYet:"“Fix style-3 only if MEM-1 files” [quoted honest call]",
      outsideFacing:false, parkedComputed:false},
@@ -251,7 +251,7 @@ const MAP = {
      maturity:"Low", pull:"Low",
      honestCall:"Redesign or kill at next triage",
      posture:"UNKNOWN", postureAnchor:"“redesign or kill at next triage” is a conditional future action, not an assigned disposition; no operator decision names it",
-     status:"catalog-only", statusSource:"named by no operator decision",
+     status:"UNKNOWN", statusSource:"unassigned; named by no operator decision",
      gate:null,
      dontYet:"“Redesign or kill at next triage” [quoted honest call]",
      outsideFacing:false, parkedComputed:false},
@@ -818,7 +818,7 @@ function renderExecution(){
   });
   tbl.appendChild(tb);
   qp.appendChild(tbl);
-  qp.appendChild(el("p",{cls:"note",text:"Status routing: R2 → AUTHORIZED-prep (TOOL-2) · R3 → QUEUED (MEM-1) · computed PARKED set → PARKED (TOOL-3) · named by no decision → catalog-only. Owner defaults to the operator: the map speaks as “me”/“future-me” and names no other owner."}));
+  qp.appendChild(el("p",{cls:"note",text:"Status routing: R2 → AUTHORIZED-prep (TOOL-2) · R3 → QUEUED (MEM-1) · computed PARKED set → PARKED (TOOL-3) · named by no decision → UNKNOWN / unassigned. Owner defaults to the operator: the map speaks as “me”/“future-me” and names no other owner."}));
   root.appendChild(qp);
   /* dependency / unlock DAG — computed, never asserted */
   const dag=buildDag();
