@@ -99,6 +99,20 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertIn("public showing", pub1.group(1))
         self.assertIn("H4 secrets/PII sweep", pub1.group(1))
 
+    def test_h1_names_every_asset_governed_by_adoption_reality(self):
+        for relative_path in (
+            "GENERATOR_PACKAGE.md",
+            "docs/prompts/MAP_BUILDER_PACKAGE.md",
+            "examples/demo_source_map.md",
+        ):
+            line = next(
+                line for line in self.read(relative_path).splitlines()
+                if line.startswith("- **H1")
+            )
+            for asset in ("INF-1", "INF-2", "INF-3", "PUB-1", "PUB-2", "PUB-3"):
+                with self.subTest(path=relative_path, asset=asset):
+                    self.assertIn(asset, line)
+
 
 if __name__ == "__main__":
     unittest.main()
